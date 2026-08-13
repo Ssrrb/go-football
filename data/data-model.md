@@ -174,11 +174,12 @@ The later Team of the Week specification must define:
 
 ### 6. Authentication
 
-`app_user` and `user_session` are intentionally independent of `player`.
-Emails are unique case-insensitively. Store a modern password hash (Argon2id is
-recommended) and only SHA-256 hashes of high-entropy opaque session tokens,
-never raw passwords or session tokens. Session expiry/revocation remains in
-PostgreSQL even if Redis is later used as a short-lived session cache.
+`app_user`, `auth_identity`, and `user_session` are intentionally independent of
+`player`. Emails are unique case-insensitively; provider subjects are the stable
+key for Google identities. Local passwords use bcrypt, and only SHA-256 hashes
+of high-entropy opaque session tokens are stored—never raw passwords or session
+tokens. Session expiry/revocation remains in PostgreSQL even if Redis is later
+used as a short-lived session cache.
 
 ## Redis leaderboard model
 

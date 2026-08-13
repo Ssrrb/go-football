@@ -4,4 +4,4 @@
 - [x] Design the high-level architecture of the system with all components ([documentation](docs/architecture.md))
 - [ ] Implement transactional normalization/loading stages for all APF match facts
 - [ ] Implement the PostgreSQL outbox consumer and Redis rebuild command
-- [ ] Add registration, login, and session management
+- [x] Add registration, login, Google OAuth, and session management

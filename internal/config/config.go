@@ -21,6 +21,11 @@ type Config struct {
 	ShutdownTimeout        time.Duration
 	SentryDSN              string
 	SentryTracesSampleRate float64
+	SessionDuration        time.Duration
+	CookieSecure           bool
+	GoogleClientID         string
+	GoogleClientSecret     string
+	GoogleRedirectURL      string
 }
 
 // Load reads configuration from environment variables.
@@ -40,8 +45,32 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("SENTRY_TRACES_SAMPLE_RATE must be between 0 and 1")
 	}
 
+	sessionDuration, err := time.ParseDuration(value("SESSION_DURATION", "720h"))
+	if err != nil || sessionDuration <= 0 {
+		return Config{}, fmt.Errorf("SESSION_DURATION must be a positive duration")
+	}
+
+	environment := value("APP_ENV", "development")
+	cookieSecure, err := strconv.ParseBool(value("COOKIE_SECURE", strconv.FormatBool(environment == "production")))
+	if err != nil {
+		return Config{}, fmt.Errorf("COOKIE_SECURE must be true or false")
+	}
+
+	googleClientID := os.Getenv("GOOGLE_CLIENT_ID")
+	googleClientSecret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	googleRedirectURL := os.Getenv("GOOGLE_REDIRECT_URL")
+	googleValues := 0
+	for _, current := range []string{googleClientID, googleClientSecret, googleRedirectURL} {
+		if current != "" {
+			googleValues++
+		}
+	}
+	if googleValues != 0 && googleValues != 3 {
+		return Config{}, fmt.Errorf("GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, and GOOGLE_REDIRECT_URL must be set together")
+	}
+
 	cfg := Config{
-		Environment:            value("APP_ENV", "development"),
+		Environment:            environment,
 		HTTPAddress:            value("HTTP_ADDR", ":8080"),
 		DatabaseURL:            value("DATABASE_URL", "postgres://football:football@localhost:5432/football?sslmode=disable"),
 		RedisAddress:           value("REDIS_ADDR", "localhost:6379"),
@@ -52,6 +81,11 @@ func Load() (Config, error) {
 		ShutdownTimeout:        shutdownTimeout,
 		SentryDSN:              os.Getenv("SENTRY_DSN"),
 		SentryTracesSampleRate: tracesSampleRate,
+		SessionDuration:        sessionDuration,
+		CookieSecure:           cookieSecure,
+		GoogleClientID:         googleClientID,
+		GoogleClientSecret:     googleClientSecret,
+		GoogleRedirectURL:      googleRedirectURL,
 	}
 	return cfg, nil
 }

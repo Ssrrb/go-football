@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Ssrrb/go-football/internal/auth"
 	"github.com/Ssrrb/go-football/internal/config"
 	"github.com/Ssrrb/go-football/internal/leaderboard"
 	webapp "github.com/Ssrrb/go-football/internal/web"
@@ -68,6 +69,14 @@ func run(logger *slog.Logger) (runErr error) {
 
 	repository := leaderboard.NewPostgresRepository(pool)
 	leaderboards := leaderboard.NewService(repository, leaderboard.NewRedisCache(redisClient))
+	google := auth.NewGoogleClient(auth.GoogleConfig{
+		ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret,
+		RedirectURL: cfg.GoogleRedirectURL,
+	})
+	authService, err := auth.NewService(auth.NewPostgresStore(pool), google, cfg.SessionDuration)
+	if err != nil {
+		return err
+	}
 	handler, err := webapp.New(webapp.Config{
 		Logger:         logger,
 		Leaderboard:    leaderboards,
@@ -77,6 +86,8 @@ func run(logger *slog.Logger) (runErr error) {
 		RedisCheck: func(ctx context.Context) error {
 			return redisClient.Ping(ctx).Err()
 		},
+		Auth:         authService,
+		CookieSecure: cfg.CookieSecure,
 		ReportError: func(ctx context.Context, err error) {
 			if hub := sentry.GetHubFromContext(ctx); hub != nil {
 				hub.CaptureException(err)

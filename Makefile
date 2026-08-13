@@ -1,11 +1,12 @@
-.PHONY: help dev run infra-up infra-down test test-go test-etl fmt vet build etl-discover
+.PHONY: help dev run infra-up infra-down test test-go test-etl fmt vet build etl-discover etl-load-sofascore
 
 help:
 	@printf '%s\n' 'make dev           Run the complete local stack' \
 		'make run           Run the Go service with .env' \
 		'make infra-up      Start PostgreSQL and Redis' \
 		'make test          Run Go and Python tests' \
-		'make etl-discover  Run APF discovery locally'
+		'make etl-discover  Run APF discovery locally' \
+		'make etl-load-sofascore  Load the persisted SofaScore export'
 
 dev:
 	docker compose up --build
@@ -38,3 +39,6 @@ build:
 
 etl-discover:
 	PYTHONPATH=etl/src python3 -m go_football_sources.cli discover
+
+etl-load-sofascore:
+	PYTHONPATH=etl/src python3 -m go_football_sources.load_sofascore_clausura_2026

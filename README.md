@@ -36,8 +36,8 @@ make run
 ```
 
 Open <http://localhost:8080>. Set `EDITION_ID` and `SCORING_MODEL_ID` in `.env`
-after loading and scoring an edition. To run everything in
-containers:
+after loading and scoring an edition. Local registration and password login work
+without any third-party credentials. To run everything in containers:
 
 ```bash
 make dev
@@ -45,6 +45,34 @@ make dev
 
 PostgreSQL bootstrap migrations run only when its Docker volume is first
 created. Use `docker compose down -v` to intentionally recreate a local database.
+For an existing database created before auth migration 003, apply it once with
+`psql "$DATABASE_URL" -f data/db/migrations/003_auth_identities.sql`.
+
+## Authentication
+
+The web app supports email/password accounts and optional Google OAuth. Passwords
+are bcrypt-hashed, while only SHA-256 hashes of opaque session tokens are stored
+in PostgreSQL. Login, registration, and logout forms use CSRF tokens and work
+with both standard form submissions and HTMX.
+
+To enable Google sign-in:
+
+1. In Google Cloud Console, create an **OAuth 2.0 Client ID** with application
+   type **Web application**.
+2. Add `http://localhost:8080/auth/google/callback` as an authorized redirect URI
+   (use the HTTPS callback URL for production).
+3. Set all three values in `.env`:
+
+```bash
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+GOOGLE_REDIRECT_URL=http://localhost:8080/auth/google/callback
+```
+
+Google sign-in is hidden when those values are empty. They must either all be set
+or all be empty. Set `COOKIE_SECURE=true` behind HTTPS; it defaults to true when
+`APP_ENV=production`. `SESSION_DURATION` defaults to `720h` (30 days). Never
+commit OAuth credentials or put the client secret in browser code.
 
 ## Sentry
 
@@ -83,6 +111,11 @@ jobs, not unit tests. See [`etl/README.md`](etl/README.md) and the
 | Route | Purpose |
 | --- | --- |
 | `GET /?position=GK` | Full leaderboard page, or an HTMX fragment when `HX-Request: true` |
+| `GET/POST /register` | Local account registration form and submission |
+| `GET/POST /login` | Local login form and submission |
+| `POST /logout` | Revoke the current session |
+| `GET /auth/google` | Start Google OAuth when configured |
+| `GET /auth/google/callback` | Google OAuth callback |
 | `GET /health/live` | Process liveness |
 | `GET /health/ready` | PostgreSQL and Redis readiness |
 

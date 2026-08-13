@@ -461,7 +461,7 @@ CREATE TABLE team_of_week_player (
 CREATE TABLE app_user (
     id                  uuid PRIMARY KEY,
     email               text NOT NULL,
-    password_hash       text NOT NULL,
+    password_hash       text,
     display_name        text NOT NULL,
     role                text NOT NULL DEFAULT 'user' CHECK (role IN ('user', 'admin')),
     status              text NOT NULL DEFAULT 'active' CHECK (status IN ('pending', 'active', 'disabled')),
@@ -471,6 +471,17 @@ CREATE TABLE app_user (
 );
 
 CREATE UNIQUE INDEX app_user_email_ci_idx ON app_user (lower(email));
+
+CREATE TABLE auth_identity (
+    user_id             uuid NOT NULL REFERENCES app_user(id) ON DELETE CASCADE,
+    provider            text NOT NULL,
+    provider_subject    text NOT NULL,
+    email               text NOT NULL,
+    created_at          timestamptz NOT NULL DEFAULT now(),
+    updated_at          timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, provider_subject),
+    UNIQUE (user_id, provider)
+);
 
 -- Store only a cryptographic hash of the opaque session token.
 CREATE TABLE user_session (

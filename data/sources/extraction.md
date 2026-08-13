@@ -202,8 +202,17 @@ season as `87613`. Its website uses internal endpoints shaped like:
 /api/v1/event/{eventId}/lineups
 ```
 
-They are not a documented public contract. Ordinary direct requests returned
-HTTP 403 during validation. A follow-up test using SoccerData's standard HTTP
+The persisted export under `tests/sofascore_scraper/data/` was captured on
+2026-08-13 and contains rounds 1–4: 24 finished matches, 334 players, 1,102
+lineup/player-stat rows, 48 team-stat rows, and 498 incidents. The offline loader
+preserves all 161 relevant JSON responses and does not make SofaScore requests.
+Its reviewed crosswalk maps SofaScore IDs to APF canonical IDs using match
+kickoff, home/away side, shirt number, and starter/substitute observations;
+display names are not identity keys. Of 334 player mappings, 332 had exact
+lineup signatures and two differed by one SofaScore roster observation.
+
+These endpoints are not a documented public contract. Ordinary direct requests
+returned HTTP 403 during validation. A follow-up test using SoccerData's standard HTTP
 client and the IDs above succeeded: it found all 132 fixtures, a 12-team table,
 and match lineups, incidents, team statistics, numeric player IDs, minutes,
 and player ratings. SoccerData 1.9.1 does not expose those match-detail routes

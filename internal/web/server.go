@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Ssrrb/go-football/internal/auth"
 	"github.com/Ssrrb/go-football/internal/leaderboard"
 )
 
@@ -22,6 +23,19 @@ var files embed.FS
 // Leaderboard lists current leaderboard entries.
 type Leaderboard interface {
 	List(context.Context, leaderboard.Query) ([]leaderboard.Entry, error)
+}
+
+// Authenticator is the authentication application service used by HTTP handlers.
+type Authenticator interface {
+	Register(context.Context, string, string, string) (auth.User, error)
+	Authenticate(context.Context, string, string) (auth.User, error)
+	AuthenticateGoogle(context.Context, string, string) (auth.User, error)
+	GoogleEnabled() bool
+	GoogleAuthURL(string, string) string
+	NewSession(context.Context, string) (string, error)
+	UserBySession(context.Context, string) (auth.User, error)
+	RevokeSession(context.Context, string) error
+	SessionDuration() time.Duration
 }
 
 // Check verifies one runtime dependency.
@@ -39,6 +53,8 @@ type Config struct {
 	DatabaseCheck  Check
 	RedisCheck     Check
 	ReportError    ErrorReporter
+	Auth           Authenticator
+	CookieSecure   bool
 }
 
 type server struct {
@@ -49,6 +65,8 @@ type server struct {
 	databaseCheck  Check
 	redisCheck     Check
 	reportError    ErrorReporter
+	auth           Authenticator
+	cookieSecure   bool
 	templates      *template.Template
 }
 
@@ -59,12 +77,14 @@ type pageData struct {
 	RefreshURL   string
 	ErrorMessage string
 	UpdatedAt    time.Time
+	User         *auth.User
+	CSRFToken    string
 }
 
 // New constructs the application HTTP handler.
 func New(cfg Config) (http.Handler, error) {
-	if cfg.Logger == nil || cfg.Leaderboard == nil {
-		return nil, fmt.Errorf("logger and leaderboard are required")
+	if cfg.Logger == nil || cfg.Leaderboard == nil || cfg.Auth == nil {
+		return nil, fmt.Errorf("logger, leaderboard, and auth are required")
 	}
 	templates, err := template.ParseFS(files, "templates/*.html")
 	if err != nil {
@@ -79,10 +99,18 @@ func New(cfg Config) (http.Handler, error) {
 		logger: cfg.Logger, leaderboard: cfg.Leaderboard,
 		editionID: cfg.EditionID, scoringModelID: cfg.ScoringModelID,
 		databaseCheck: cfg.DatabaseCheck, redisCheck: cfg.RedisCheck,
-		reportError: cfg.ReportError, templates: templates,
+		reportError: cfg.ReportError, auth: cfg.Auth,
+		cookieSecure: cfg.CookieSecure, templates: templates,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.home)
+	mux.HandleFunc("GET /login", s.loginPage)
+	mux.HandleFunc("POST /login", s.login)
+	mux.HandleFunc("GET /register", s.registerPage)
+	mux.HandleFunc("POST /register", s.register)
+	mux.HandleFunc("POST /logout", s.logout)
+	mux.HandleFunc("GET /auth/google", s.googleStart)
+	mux.HandleFunc("GET /auth/google/callback", s.googleCallback)
 	mux.HandleFunc("GET /health/live", live)
 	mux.HandleFunc("GET /health/ready", s.ready)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))
@@ -101,6 +129,8 @@ func (s *server) home(response http.ResponseWriter, request *http.Request) {
 	}
 
 	data := s.load(request, position)
+	data.User = s.currentUser(response, request)
+	data.CSRFToken = s.csrfToken(response, request)
 	response.Header().Add("Vary", "HX-Request, HX-History-Restore-Request")
 	if request.Header.Get("HX-Request") == "true" && request.Header.Get("HX-History-Restore-Request") != "true" {
 		s.render(response, request, http.StatusOK, "leaderboard", data)
@@ -136,7 +166,7 @@ func (s *server) load(request *http.Request, position string) pageData {
 	return data
 }
 
-func (s *server) render(response http.ResponseWriter, request *http.Request, status int, name string, data pageData) {
+func (s *server) render(response http.ResponseWriter, request *http.Request, status int, name string, data any) {
 	response.Header().Set("Content-Type", "text/html; charset=utf-8")
 	response.WriteHeader(status)
 	if err := s.templates.ExecuteTemplate(response, name, data); err != nil {

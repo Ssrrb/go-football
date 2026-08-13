@@ -14,7 +14,18 @@
       <span class="brand-mark">GF</span>
       <span>Go Football</span>
     </a>
-    <span class="competition">Primera División Paraguaya</span>
+    <div class="header-actions">
+      <span class="competition">Primera División Paraguaya</span>
+      {{if .User}}
+        <span class="user-name">{{.User.DisplayName}}</span>
+        <form action="/logout" method="post" hx-post="/logout">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button class="text-button" type="submit">Sign out</button>
+        </form>
+      {{else}}
+        <a class="header-link" href="/login">Sign in</a>
+      {{end}}
+    </div>
   </header>
   <main class="shell">
     <section class="hero">

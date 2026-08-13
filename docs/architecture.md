@@ -22,7 +22,8 @@ flowchart LR
 
 - **`cmd/web` and `internal/`**: the Go composition root, HTTP delivery, and
   leaderboard application code. HTML is rendered on the server; HTMX replaces
-  only the leaderboard fragment and polls every 15 seconds.
+  only the leaderboard fragment and polls every 15 seconds. The same process
+  serves local/Google sign-in and HTMX-enhanced authentication forms.
 - **`etl/`**: an isolated Python package for source discovery, extraction, raw
   payload retention, and normalization. It does not serve web traffic.
 - **`data/db/`**: PostgreSQL schema and ordered bootstrap migrations.
@@ -33,8 +34,10 @@ flowchart LR
 The leaderboard service reads a versioned Redis sorted set first, enriches UUID
 members from PostgreSQL, and falls back to PostgreSQL ranking queries if Redis is
 empty or unavailable. Tied entries share a competition rank; UUID ordering gives
-stable pagination only. `/health/live` checks the process and `/health/ready`
-checks PostgreSQL and Redis.
+stable pagination only. Authentication users, external identities, and hashed
+opaque sessions are authoritative in PostgreSQL; Google uses authorization code
+flow with PKCE. `/health/live` checks the process and `/health/ready` checks
+PostgreSQL and Redis.
 
 ## Data flow
 
