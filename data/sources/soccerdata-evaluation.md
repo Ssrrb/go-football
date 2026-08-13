@@ -105,10 +105,10 @@ model, retain postponed/live statuses, and use it for cross-source validation.
 uv run --project tests/soccerdata python <probe-script>
 
 # Verify the project's deterministic adapter tests.
-PYTHONPATH=src python3 -m unittest discover -s tests -v
+PYTHONPATH=etl/src python3 -m unittest discover -s etl/tests -v
 
 # Verify live APF discovery.
-PYTHONPATH=src python3 -m go_football_sources.cli discover
+PYTHONPATH=etl/src python3 -m go_football_sources.cli discover
 ```
 
 Live provider behavior can change. Re-evaluate only if a licensed feed becomes

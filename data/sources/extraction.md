@@ -102,32 +102,32 @@ the allowed APF pages or an official licensed feed instead.
 ## Included extractor
 
 The dependency-free Python adapter is in
-`src/go_football_sources/apf.py`. Run it from the repository root:
+`etl/src/go_football_sources/apf.py`. Run it from the repository root:
 
 ```bash
 # IDs, all gameweeks, and the current fixture list
-PYTHONPATH=src python3 -m go_football_sources.cli discover
+PYTHONPATH=etl/src python3 -m go_football_sources.cli discover
 
 # One round's fixtures
-PYTHONPATH=src python3 -m go_football_sources.cli round 4
+PYTHONPATH=etl/src python3 -m go_football_sources.cli round 4
 
 # A round plus detail for finished matches, written atomically
-PYTHONPATH=src python3 -m go_football_sources.cli \
+PYTHONPATH=etl/src python3 -m go_football_sources.cli \
   --output data/raw/apf/round-4.json round 4 --details finished
 
 # One match
-PYTHONPATH=src python3 -m go_football_sources.cli match \
+PYTHONPATH=etl/src python3 -m go_football_sources.cli match \
   temporada-2026-paraguay-primera-division-clausura-4-rubio-nu-vs-recoleta-842
 
 # All 22 gameweeks; details are optional because this increases request volume
-PYTHONPATH=src python3 -m go_football_sources.cli \
+PYTHONPATH=etl/src python3 -m go_football_sources.cli \
   --output data/raw/apf/season.json season --details none
 ```
 
 Install it locally if the console command is preferred:
 
 ```bash
-python3 -m pip install -e .
+python3 -m pip install -e etl
 go-football-sources discover
 ```
 

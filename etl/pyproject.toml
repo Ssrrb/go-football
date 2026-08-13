@@ -11,6 +11,7 @@ dependencies = []
 
 [project.scripts]
 go-football-sources = "go_football_sources.cli:main"
+go-football-load-clausura-2026 = "go_football_sources.load_clausura_2026:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

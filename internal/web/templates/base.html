@@ -1,0 +1,47 @@
+{{define "base"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Paraguayan Primera División player leaderboard">
+  <title>Go Football · Player leaderboard</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/htmx.min.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="Go Football home">
+      <span class="brand-mark">GF</span>
+      <span>Go Football</span>
+    </a>
+    <span class="competition">Primera División Paraguaya</span>
+  </header>
+  <main class="shell">
+    <section class="hero">
+      <p class="eyebrow">Clausura 2026</p>
+      <h1>Player leaderboard</h1>
+      <p>Live rankings backed by official APF match data.</p>
+    </section>
+
+    <form class="filters" action="/" method="get" aria-label="Leaderboard filters"
+          hx-get="/" hx-target="#leaderboard" hx-swap="outerHTML"
+          hx-trigger="change from:select, submit" hx-push-url="true"
+          hx-indicator="#leaderboard-loading">
+      <label for="position">Position</label>
+      <select id="position" name="position">
+        <option value="" {{if eq .Position ""}}selected{{end}}>All positions</option>
+        <option value="GK" {{if eq .Position "GK"}}selected{{end}}>Goalkeepers</option>
+        <option value="DEF" {{if eq .Position "DEF"}}selected{{end}}>Defenders</option>
+        <option value="MID" {{if eq .Position "MID"}}selected{{end}}>Midfielders</option>
+        <option value="FWD" {{if eq .Position "FWD"}}selected{{end}}>Forwards</option>
+      </select>
+      <button type="submit">Apply</button>
+      <span id="leaderboard-loading" class="htmx-indicator" role="status">Updating…</span>
+      <span class="live"><span></span> Live</span>
+    </form>
+
+    {{template "leaderboard" .}}
+  </main>
+  <footer>Scores are shown in points and refreshed from the current published model.</footer>
+</body>
+</html>{{end}}

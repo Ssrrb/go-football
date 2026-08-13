@@ -1,4 +1,23 @@
+# Local configuration
+.env
+
+# Go
+/web
+*.test
+coverage.out
+
+# Python
 __pycache__/
 *.py[cod]
 .venv/
+*.egg-info/
+build/
+dist/
+
+# Runtime data
 data/raw/
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/

@@ -197,7 +197,9 @@ class APFClient:
             except HTTPError as error:
                 self._last_request_at = time.monotonic()
                 last_error = error
-                if error.code not in {429, 500, 502, 503, 504}:
+                # APF's CDN occasionally emits a spurious 304 even though this
+                # client sends no conditional headers; retry it like a transient.
+                if error.code not in {304, 429, 500, 502, 503, 504}:
                     break
                 retry_after = error.headers.get("Retry-After")
                 wait = float(retry_after) if retry_after and retry_after.isdigit() else 2**attempt
@@ -282,14 +284,21 @@ class APFClient:
         result["payload_sha256"] = payload_digest(payload)
         return result
 
-    def get_match(self, slug: str) -> dict[str, Any]:
+    def get_match_with_raw(self, slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Fetch a normalized match and its unmodified source payload."""
         payload, url = self._get_json(MATCH_API_PATH, {"slug": slug})
         if not isinstance(payload, Mapping):
             raise APFError("APF match endpoint returned an unexpected payload")
-        normalized = normalize_match_payload(payload)
+        raw = dict(payload)
+        normalized = normalize_match_payload(raw)
         normalized["source_url"] = url
         normalized["fetched_at"] = _utc_now()
-        normalized["payload_sha256"] = payload_digest(payload)
+        normalized["payload_sha256"] = payload_digest(raw)
+        return normalized, raw
+
+    def get_match(self, slug: str) -> dict[str, Any]:
+        """Fetch and normalize one match."""
+        normalized, _ = self.get_match_with_raw(slug)
         return normalized
 
 

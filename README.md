@@ -1,64 +1,91 @@
-## Project Description
-The goal of this repo is to create a real-time leaderboard system for ranking and scoring of jugadores de la Primera División Paraguaya Clausura 2026. Using data from APF official site.
+# Go Football
 
-## Project Requirements
-
-Create a real-time leaderboard system that ranks players based on their scores in each round of the tournament. The system should meet the following requirements:
-
-User Authentication: Users should be able to register and log in to the system.
-Scoring: Calculate rating points for each player within each round.
-Leaderboard Updates: Display a global leaderboard showing the top players ranked by rating points, filtered by position.
-Real-Time Updates: Update the leaderboard in real-time as new scores are entered.
-Team of the Week Report: Generate a team of the week report for the top players for each round.
-
-Use Redis Sorted Sets
-
-Leaderboard Storage: Use Redis sorted sets to store and manage leaderboards.
-Real-Time Updates: Utilize Redis sorted sets for efficient real-time updates and queries.
-Rank Queries: Use Redis commands to query player ranks and leaderboard positions.
-
-## Data model
-
-The PostgreSQL source-of-truth model, correction/versioning rules, scoring
-projections, and Redis key design are documented in
-[`data/data-model.md`](data/data-model.md). The corresponding PostgreSQL schema
-is in [`data/db/schema.sql`](data/db/schema.sql).
-
-## Data
-
-The canonical data source is the official APF site. Its current Opta-backed
-payload includes fixtures, results, lineups, events, team statistics, and
-per-player statistics. See [the extraction decision](data/sources/extraction.md)
-for the reliability analysis, endpoint discovery, identifiers, correction
-strategy, and compliance caveat.
-
-The [SoccerData](https://github.com/probberechts/soccerdata) project was also
-tested with a custom Paraguayan league configuration. It is not a drop-in 2026
-source: ESPN returned 2020 matches labelled as 2026, while SoccerData's
-SofaScore adapter requires tournament-ID-based discovery and does not implement
-its available lineup, incident, or player-stat endpoints. With those extensions
-and licensed access, SofaScore could be useful as an independent validation
-feed—not as the canonical source. See the
-[SoccerData evaluation](data/sources/soccerdata-evaluation.md) for evidence.
-
-Quick source check:
-
-```bash
-PYTHONPATH=src python3 -m go_football_sources.cli discover
-PYTHONPATH=src python3 -m go_football_sources.cli round 4 --details finished
-```
-
-Run the source adapter tests with:
-
-```bash
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-```
+Real-time player rankings for the Paraguayan Primera División, built from the
+official APF data feed.
 
 ## Stack
 
-- Python
-- Go
-- Redis
-- Htmx
-- Psql
-- Docker
+- **Go + server-rendered HTML + HTMX** for the web application
+- **Python** for independent APF extraction and ETL jobs
+- **PostgreSQL 16** as the source of truth
+- **Redis sorted sets** as a rebuildable real-time leaderboard projection
+- **Docker Compose** for local infrastructure
+
+## Repository layout
+
+```text
+cmd/web/                 Go web process entry point
+internal/config/         Environment configuration
+internal/leaderboard/    PostgreSQL/Redis leaderboard application layer
+internal/web/            HTTP handlers, templates, and static assets
+etl/                     Standalone Python APF ETL package and tests
+data/db/                 Schema and ordered SQL migrations
+data/sources/            Source research and extraction decisions
+docs/architecture.md     Components and data flow
+```
+
+## Quick start
+
+Requirements: Go 1.23+, Python 3.11+, and Docker.
+
+```bash
+cp .env.example .env
+make infra-up
+make test
+make run
+```
+
+Open <http://localhost:8080>. Set `EDITION_ID` and `SCORING_MODEL_ID` in `.env`
+after loading and scoring an edition. To run everything in
+containers:
+
+```bash
+make dev
+```
+
+PostgreSQL bootstrap migrations run only when its Docker volume is first
+created. Use `docker compose down -v` to intentionally recreate a local database.
+
+## Sentry
+
+Create a Sentry project with the **Go** platform for the web service, then set
+its server-side DSN in the deployment environment:
+
+```bash
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+SENTRY_TRACES_SAMPLE_RATE=0.1
+SENTRY_RELEASE=$(git rev-parse HEAD)
+```
+
+Leave `SENTRY_DSN` empty to disable Sentry (the local default). The Go service
+reports startup failures, request panics, and handled leaderboard/rendering
+errors. Set the trace sample rate to `0` for errors only or to a value from `0`
+to `1` to sample request performance traces. Use a separate **Python** Sentry
+project if the independently deployed ETL needs monitoring.
+
+## ETL
+
+The Python application is isolated under `etl/` and has no runtime dependency on
+the Go process.
+
+```bash
+PYTHONPATH=etl/src python3 -m go_football_sources.cli discover
+PYTHONPATH=etl/src python3 -m go_football_sources.cli round 4 --details finished
+PYTHONPATH=etl/src python3 -m unittest discover -s etl/tests -v
+```
+
+Live APF commands are rate-limited and intended for manual checks or scheduled
+jobs, not unit tests. See [`etl/README.md`](etl/README.md) and the
+[source decision](data/sources/extraction.md).
+
+## HTTP endpoints
+
+| Route | Purpose |
+| --- | --- |
+| `GET /?position=GK` | Full leaderboard page, or an HTMX fragment when `HX-Request: true` |
+| `GET /health/live` | Process liveness |
+| `GET /health/ready` | PostgreSQL and Redis readiness |
+
+The detailed data model, correction rules, Redis keys, and outbox invariants are
+in [`data/data-model.md`](data/data-model.md). The system design is in
+[`docs/architecture.md`](docs/architecture.md).
