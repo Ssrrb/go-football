@@ -1,4 +1,4 @@
 - [x] Get reliable data sources and extract them
-- [ ] Design the data model
+- [x] Design the data model ([documentation](data/data-model.md), [PostgreSQL schema](data/db/schema.sql))
 - [ ] Define the scoring formula and Team of the Week
 - [ ] Design the high-level architecture of the system with all components
