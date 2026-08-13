@@ -45,8 +45,12 @@ make dev
 
 PostgreSQL bootstrap migrations run only when its Docker volume is first
 created. Use `docker compose down -v` to intentionally recreate a local database.
-For an existing database created before auth migration 003, apply it once with
-`psql "$DATABASE_URL" -f data/db/migrations/003_auth_identities.sql`.
+For an existing database, apply each outstanding migration once in numeric order.
+For example, to add the normalized SofaScore player rating:
+
+```bash
+psql "$DATABASE_URL" -f data/db/migrations/004_player_match_rating.sql
+```
 
 ## Authentication
 

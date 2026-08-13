@@ -246,6 +246,19 @@ def _stat_value(stats: Mapping[str, Any], source_key: str) -> int | None:
     return None
 
 
+def _rating_value(stats: Mapping[str, Any]) -> float | None:
+    """Return SofaScore's decimal match rating without coercing it to an integer."""
+    value = stats.get("rating")
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise LoadError(f"Invalid SofaScore player rating: {value!r}")
+    rating = float(value)
+    if not 0 <= rating <= 10:
+        raise LoadError(f"SofaScore player rating is outside [0, 10]: {value!r}")
+    return rating
+
+
 def _team_stats(payload: Mapping[str, Any], side: str) -> dict[str, Any]:
     value_key = f"{side}Value"
     display_key = side
@@ -508,7 +521,13 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
                     field: _stat_value(raw_stats, source_key)
                     for field, source_key in STAT_FIELDS.items()
                 }
-                canonical.update({"yellow_cards": None, "red_cards": None})
+                canonical.update(
+                    {
+                        "rating": _rating_value(raw_stats),
+                        "yellow_cards": None,
+                        "red_cards": None,
+                    }
+                )
                 player_stats.append(
                     {
                         "id": _sofascore_id("player_stat", stat_source_id),
@@ -955,6 +974,7 @@ updated_at = now();"""
         "assists",
         "yellow_cards",
         "red_cards",
+        "rating",
         *list(STAT_FIELDS)[3:],
     ]
     for stat in dataset["player_stats"]:
@@ -1120,6 +1140,10 @@ def main(argv: list[str] | None = None) -> int:
             "players": len(dataset["players"]),
             "lineups": len(dataset["lineups"]),
             "player_stats": len(dataset["player_stats"]),
+            "player_ratings": sum(
+                stat["canonical"]["rating"] is not None
+                for stat in dataset["player_stats"]
+            ),
             "team_stats": len(dataset["team_stats"]),
             "events": len(dataset["events"]),
             "database_loaded": not args.dry_run,

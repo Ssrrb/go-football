@@ -31,8 +31,9 @@ edition roster endpoint, so scheduled matches alone cannot establish a player
 roster. Re-running the loader is idempotent and retains immutable raw snapshots.
 
 The SofaScore loader imports the 24 finished matches in rounds 1–4, including
-confirmed lineups, player metrics, team metrics, incidents, venues, and all 161
-persisted JSON responses as immutable snapshots. It resolves provider IDs only
+confirmed lineups, player metrics (including the decimal match rating), team
+metrics, incidents, venues, and all 161 persisted JSON responses as immutable
+snapshots. It resolves provider IDs only
 through `data/sources/sofascore-apf-clausura-2026-crosswalk.json`; names are not
 identity keys. Missing metrics remain `NULL`, while the complete provider fields
 remain in `raw_stats` and `raw_snapshot`.

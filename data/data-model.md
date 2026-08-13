@@ -100,8 +100,9 @@ time of calculation, making old selections explainable.
 - `match_lineup`: one player per match, with team, starter/substitute, captain,
   shirt number, formation place, and resolved position.
 - `match_event`: ordered goals, cards, substitutions, and other events.
-- `player_match_stat`: the stable canonical statistic subset plus all Opta
-  fields in `raw_stats`.
+- `player_match_stat`: the stable canonical statistic subset, including the
+  nullable provider-published decimal `rating`, plus all provider fields in
+  `raw_stats`.
 - `team_match_stat`: complete raw team metrics.
 
 The normalized tables are the latest projection. Apply one snapshot in a single

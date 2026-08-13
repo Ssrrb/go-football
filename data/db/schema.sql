@@ -279,8 +279,10 @@ CREATE TABLE match_lineup (
 
 CREATE INDEX match_lineup_team_idx ON match_lineup (match_id, team_id);
 
--- Canonical metrics remain nullable: NULL means APF did not publish the metric;
--- zero means it explicitly published zero. raw_stats retains every Opta metric.
+-- Canonical metrics remain nullable: NULL means the source did not publish the
+-- metric; zero means it explicitly published zero. rating is the provider's
+-- published match rating, not a score produced by this application's models.
+-- raw_stats retains every provider metric.
 CREATE TABLE player_match_stat (
     id                      uuid PRIMARY KEY,
     match_id                uuid NOT NULL REFERENCES football_match(id) ON DELETE CASCADE,
@@ -291,6 +293,7 @@ CREATE TABLE player_match_stat (
     assists                 integer,
     yellow_cards            integer,
     red_cards               integer,
+    rating                  numeric(3,1),
     saves                   integer,
     saves_inside_box        integer,
     passes_completed        integer,
@@ -320,7 +323,8 @@ CREATE TABLE player_match_stat (
     updated_at              timestamptz NOT NULL DEFAULT now(),
     UNIQUE (match_id, player_id),
     CHECK (jsonb_typeof(raw_stats) = 'object'),
-    CHECK (minutes IS NULL OR minutes >= 0)
+    CHECK (minutes IS NULL OR minutes >= 0),
+    CHECK (rating IS NULL OR rating BETWEEN 0 AND 10)
 );
 
 CREATE INDEX player_match_stat_player_idx ON player_match_stat (player_id, match_id);

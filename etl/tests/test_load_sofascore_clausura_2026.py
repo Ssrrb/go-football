@@ -6,6 +6,7 @@ from go_football_sources.load_sofascore_clausura_2026 import (
     APF_EDITION_ID,
     LoadError,
     _canonical_id,
+    _rating_value,
     _stat_value,
     _validate_basic,
     collect,
@@ -42,6 +43,12 @@ class SofaScoreLoaderTests(unittest.TestCase):
         self.assertIsNone(_stat_value({}, "goals"))
         self.assertEqual(_stat_value({"goals": 0}, "goals"), 0)
 
+    def test_preserves_decimal_player_rating(self):
+        self.assertIsNone(_rating_value({}))
+        self.assertEqual(_rating_value({"rating": 7.1}), 7.1)
+        with self.assertRaises(LoadError):
+            _rating_value({"rating": 10.1})
+
     def test_provider_namespaces_do_not_collide(self):
         self.assertNotEqual(
             _canonical_id("apf", "player", "1"),
@@ -73,6 +80,14 @@ class SofaScoreLoaderTests(unittest.TestCase):
             sum(stat["canonical"]["red_cards"] or 0 for stat in dataset["player_stats"]),
             5,
         )
+        ratings = [
+            stat["canonical"]["rating"]
+            for stat in dataset["player_stats"]
+            if stat["canonical"]["rating"] is not None
+        ]
+        self.assertEqual(len(ratings), 764)
+        self.assertEqual((min(ratings), max(ratings)), (4.8, 9.4))
+        self.assertTrue(all(isinstance(rating, float) for rating in ratings))
         self.assertEqual(
             dataset["crosswalk"]["players"].keys(), dataset["players"].keys()
         )
