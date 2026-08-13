@@ -32,13 +32,14 @@ per-player statistics. See [the extraction decision](data/sources/extraction.md)
 for the reliability analysis, endpoint discovery, identifiers, correction
 strategy, and compliance caveat.
 
-The [SoccerData](https://github.com/probberechts/soccerdata) project was also tested with a
-custom Paraguayan league configuration. It is not suitable as the 2026 data
-source: ESPN returned 2020 matches while labelling them as the requested 2026
-season, SoccerData's SofaScore adapter could not discover the competition and
-has no player-detail readers, and the other providers were unavailable or did
-not supply player-match performance. See the [SoccerData evaluation](data/sources/soccerdata-evaluation.md)
-for the test matrix and evidence.
+The [SoccerData](https://github.com/probberechts/soccerdata) project was also
+tested with a custom Paraguayan league configuration. It is not a drop-in 2026
+source: ESPN returned 2020 matches labelled as 2026, while SoccerData's
+SofaScore adapter requires tournament-ID-based discovery and does not implement
+its available lineup, incident, or player-stat endpoints. With those extensions
+and licensed access, SofaScore could be useful as an independent validation
+feed—not as the canonical source. See the
+[SoccerData evaluation](data/sources/soccerdata-evaluation.md) for evidence.
 
 Quick source check:
 

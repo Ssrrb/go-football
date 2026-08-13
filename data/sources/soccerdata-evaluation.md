@@ -6,15 +6,19 @@ Validated against the `soccerdata` 1.9.1 checkout in
 
 ## Verdict
 
-Do **not** use SoccerData as the extraction dependency or a production fallback
-for the 2026 Copa de Primera APF Clausura. Its custom-league configuration only
-maps a name to an identifier; it does not ensure that a provider carries the
-competition or that its scraper supports the required data. None of the tested
-adapters supplied reliable 2026 round-level player performance data.
+Do **not** use SoccerData unmodified as the extraction dependency or production
+fallback for the 2026 Copa de Primera APF Clausura. Its custom-league
+configuration only maps names; the SofaScore adapter's discovery route does not
+list this competition, and the adapter does not implement match lineups,
+incidents, or player statistics.
 
-The project can still be useful as a reference for cache and DataFrame design,
-but adopting it would add provider-specific scraping code and dependencies
-without replacing the APF adapter.
+A second test using SofaScore tournament `11541` and season `87613` from the
+provided tournament URL changed the narrower SofaScore conclusion: once the ID
+is pinned, SoccerData's HTTP client can retrieve the complete 2026 schedule,
+standings, and rich underlying match-detail payloads. The repository is
+therefore useful as a starting point for an **optional, licensed validation
+adapter**, but it remains neither a drop-in solution nor a replacement for the
+official APF adapter.
 
 ## Required data
 
@@ -33,26 +37,29 @@ league with these candidate mappings:
   "PAR-Primera Division": {
     "ESPN": "par.1",
     "FBref": "Primera División",
-    "Sofascore": "Division Profesional",
+    "Sofascore": "Primera Division, Clausura",
     "SoFIFA": "[Paraguay] Primera División",
     "WhoScored": "Paraguay - Division Profesional",
     "season_code": "single-year",
-    "season_start": "Jan",
+    "season_start": "Jul",
     "season_end": "Dec"
   }
 }
 ```
 
 SoccerData accepted the custom key for ESPN, FBref, SofaScore, SoFIFA, and
-WhoScored. This was only configuration validation. Live reads produced the
-results below.
+WhoScored. This was only configuration validation. Even with the exact
+SofaScore name, `read_leagues()` could not find the competition because it only
+searches SofaScore's default-tournament catalog. A test subclass then supplied
+the known tournament ID directly while leaving SoccerData's season, table, and
+schedule parsers unchanged.
 
 ## Results
 
 | Adapter | Observed result | Fit for this project |
 | --- | --- | --- |
 | ESPN | `ESPN("PAR-Primera Division", 2026).read_schedule()` completed, but returned 205 matches dated from 2020-01-17 through 2020-12-30. SoccerData assigned those rows the requested `2026` season rather than validating the upstream season. | Reject. The feed is stale for this identifier, and the silent season mislabelling is unsafe. The adapter also has no event reader; its normalized lineup output is name-based. |
-| SofaScore | The custom league was accepted, but `read_leagues()` raised `KeyError` because `Division Profesional` was absent from the provider's default-tournament list. Direct requests for known tournament `11541`, season `87613` returned HTTP 403 in this environment. | Reject. This SoccerData version implements only league, season, table, and schedule reads for SofaScore—no lineup, event, or player-stat methods. |
+| SofaScore | Name-based discovery raised `KeyError`, but pinning tournament `11541` found season `87613`. The unchanged parsers returned a 12-team table and 131 schedule rows across 22 rounds. The raw feed contained all 132 matches; SoccerData silently omitted one postponed match because `read_schedule()` only accepts status codes 0 and 100. | Useful only after extension. This version implements league, season, table, and schedule readers, but no lineup, incident, team-stat, or player-stat readers. |
 | FBref | Direct source probes returned a Cloudflare HTTP 403 response. The adapter relies on browser automation and custom competitions are explicitly unsupported on a best-effort basis. | Reject for live production. Coverage and 2026 player-match data could not be validated, and browser scraping is a poor near-live dependency. |
 | WhoScored | Direct source probes returned a Cloudflare HTTP 403 response. The adapter relies on browser automation. | Reject unless licensed access and competition coverage are established separately. |
 | SoFIFA | Direct source probes returned HTTP 403. Its data represents EA Sports FC ability ratings rather than actual match performance. | Not applicable to round scoring. |
@@ -60,9 +67,24 @@ results below.
 | Understat | Provider coverage is focused on selected European leagues. | Competition unavailable. |
 | ClubElo | Provides team-level Elo data, primarily for European clubs. | Not applicable. |
 
-The access failures are observations from this environment, not a suggestion to
-circumvent provider controls. SoccerData's Apache license does not grant rights
-to scrape its upstream websites.
+### SofaScore match-detail retest
+
+Using SoccerData's normal HTTP client, round 4 returned six finished matches. A
+finished match (`16588791`, Rubio Ñu 1–3 Recoleta FC) returned:
+
+- event identity and status;
+- 47 all-match team-stat fields, including possession, expected goals, shots,
+  passes, duels, and average rating;
+- 24 incidents covering goals, cards, substitutions, periods, and injury time;
+- 23 players per team in the lineup payload, with numeric player IDs, minutes,
+  SofaScore rating, and detailed goalkeeper/outfield metrics.
+
+This proves the upstream SofaScore data is technically useful for the scoring
+project. It does **not** prove production reliability: ordinary direct requests
+returned HTTP 403 in this environment, the successful client uses
+SoccerData's TLS request implementation, and these are undocumented internal
+website endpoints. Access permission and a stable contract are still required.
+SoccerData's Apache license does not grant rights to scrape its upstream sites.
 
 ## Comparison with the APF adapter
 
@@ -72,7 +94,9 @@ in the selected gameweek. APF match details expose the lineups, events, team
 statistics, per-player Opta metrics, and stable UUIDs needed by the data model.
 The APF routes therefore remain the technically complete canonical source,
 subject to the permission and `robots.txt` caveat documented in
-[`extraction.md`](extraction.md).
+[`extraction.md`](extraction.md). If licensed SofaScore access is obtained, add
+a dedicated adapter, map its numeric team/player/match IDs through the alias
+model, retain postponed/live statuses, and use it for cross-source validation.
 
 ## Commands used
 

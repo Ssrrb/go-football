@@ -14,7 +14,7 @@ production dependency.
 | Source | What was confirmed | Access/reliability | Role |
 | --- | --- | --- | --- |
 | APF | 22 gameweeks, fixtures, results, stable UUIDs, lineups, events, team and player stats | No authentication on the website routes; not a documented public API | Primary/canonical |
-| SofaScore | Live results, tables, lineups and detailed stats | Undocumented internal API; returned HTTP 403 from the test environment | Optional validation only |
+| SofaScore | Live results, tables, lineups and detailed stats | Undocumented internal API; direct requests returned HTTP 403, while a SoccerData client retest returned data | Optional licensed validation only |
 | PlaymakerStats | Live match pages, lineups, events and player stats; numeric entity IDs | Cloudflare challenge returned HTTP 403; no documented API found | Manual QA only |
 
 This avoids a difficult and error-prone cross-site player-name merge. APF UUIDs
@@ -202,9 +202,18 @@ season as `87613`. Its website uses internal endpoints shaped like:
 /api/v1/event/{eventId}/lineups
 ```
 
-They are not a documented public contract and returned 403 during validation.
-Do not evade the block. Seek permission/licensing before building an adapter;
-otherwise keep SofaScore as a human-visible QA comparison.
+They are not a documented public contract. Ordinary direct requests returned
+HTTP 403 during validation. A follow-up test using SoccerData's standard HTTP
+client and the IDs above succeeded: it found all 132 fixtures, a 12-team table,
+and match lineups, incidents, team statistics, numeric player IDs, minutes,
+and player ratings. SoccerData 1.9.1 does not expose those match-detail routes
+through its SofaScore adapter, cannot discover this non-default tournament by
+name, and drops statuses other than not-started/finished from its schedule.
+See [`soccerdata-evaluation.md`](soccerdata-evaluation.md) for the test evidence.
+
+This confirms technical coverage, not authorized or stable production access.
+Do not evade access controls. Seek permission/licensing before building an
+adapter; otherwise keep SofaScore as human-visible QA only.
 
 ### PlaymakerStats
 
