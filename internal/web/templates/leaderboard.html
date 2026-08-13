@@ -8,11 +8,15 @@
   {{else if .ErrorMessage}}
     <div class="state error"><h2>Unable to load scores</h2><p>{{.ErrorMessage}}</p></div>
   {{else if not .Entries}}
-    <div class="state"><h2>No published scores yet</h2><p>The table will update automatically after scoring is published.</p></div>
+    {{if .RatingMode}}
+      <div class="state"><h2>No player ratings yet</h2><p>The table will update automatically after rated matches are loaded.</p></div>
+    {{else}}
+      <div class="state"><h2>No published scores yet</h2><p>The table will update automatically after scoring is published.</p></div>
+    {{end}}
   {{else}}
     <div class="table-wrap">
       <table>
-        <thead><tr><th scope="col">Rank</th><th scope="col">Player</th><th scope="col">Position</th><th scope="col" class="points">Points</th></tr></thead>
+        <thead><tr><th scope="col">Rank</th><th scope="col">Player</th><th scope="col">Position</th><th scope="col" class="points">{{if .RatingMode}}Rating{{else}}Points{{end}}</th></tr></thead>
         <tbody>
           {{range .Entries}}
           <tr>

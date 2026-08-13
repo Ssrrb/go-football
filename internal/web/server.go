@@ -74,6 +74,7 @@ type pageData struct {
 	Entries      []leaderboard.Entry
 	Position     string
 	Configured   bool
+	RatingMode   bool
 	RefreshURL   string
 	ErrorMessage string
 	UpdatedAt    time.Time
@@ -147,6 +148,7 @@ func (s *server) load(request *http.Request, position string) pageData {
 	data := pageData{
 		Position:   position,
 		Configured: s.editionID != "" && s.scoringModelID != "",
+		RatingMode: s.scoringModelID == leaderboard.PlayerMatchRatingModelID,
 		RefreshURL: refreshURL,
 		UpdatedAt:  time.Now().UTC(),
 	}

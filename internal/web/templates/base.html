@@ -31,7 +31,7 @@
     <section class="hero">
       <p class="eyebrow">Clausura 2026</p>
       <h1>Player leaderboard</h1>
-      <p>Live rankings backed by official APF match data.</p>
+      <p>{{if .RatingMode}}Players ranked by their average published match rating.{{else}}Live rankings backed by official APF match data.{{end}}</p>
     </section>
 
     <form class="filters" action="/" method="get" aria-label="Leaderboard filters"
@@ -53,6 +53,6 @@
 
     {{template "leaderboard" .}}
   </main>
-  <footer>Scores are shown in points and refreshed from the current published model.</footer>
+  <footer>{{if .RatingMode}}Ratings are averaged across rated matches in the selected edition.{{else}}Scores are shown in points and refreshed from the current published model.{{end}}</footer>
 </body>
 </html>{{end}}

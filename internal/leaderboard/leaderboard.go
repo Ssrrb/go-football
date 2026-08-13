@@ -6,7 +6,13 @@ import (
 	"fmt"
 )
 
-const defaultLimit = 50
+const (
+	defaultLimit = 50
+
+	// PlayerMatchRatingModelID selects an edition leaderboard based on the
+	// provider-published player_match_stat rating instead of a scoring model.
+	PlayerMatchRatingModelID = "default"
+)
 
 // Entry is one ranked football player.
 type Entry struct {
@@ -35,6 +41,11 @@ type Query struct {
 	ScoringModelID string
 	Position       string
 	Limit          int
+}
+
+// UsesMatchRatings reports whether the query selects provider match ratings.
+func (q Query) UsesMatchRatings() bool {
+	return q.ScoringModelID == PlayerMatchRatingModelID
 }
 
 // Repository reads the authoritative PostgreSQL projection.
@@ -82,7 +93,9 @@ func (s *Service) List(ctx context.Context, query Query) ([]Entry, error) {
 	if query.Limit <= 0 || query.Limit > 100 {
 		query.Limit = defaultLimit
 	}
-	if s.cache != nil {
+	// The default rating leaderboard is computed directly from normalized match
+	// statistics and does not have a Redis scoring-model projection.
+	if s.cache != nil && !query.UsesMatchRatings() {
 		cached, err := s.cache.Top(ctx, query)
 		if err == nil && len(cached) > 0 {
 			players, resolveErr := s.repository.FindPlayers(ctx, query, playerIDs(cached))

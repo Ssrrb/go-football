@@ -19,14 +19,18 @@ func (r repositoryStub) FindPlayers(context.Context, Query, []string) (map[strin
 type cacheStub struct {
 	entries []CachedEntry
 	err     error
+	calls   int
 }
 
-func (c cacheStub) Top(context.Context, Query) ([]CachedEntry, error) { return c.entries, c.err }
+func (c *cacheStub) Top(context.Context, Query) ([]CachedEntry, error) {
+	c.calls++
+	return c.entries, c.err
+}
 
 func TestServiceEnrichesCachedRanking(t *testing.T) {
 	service := NewService(repositoryStub{players: map[string]Player{
 		"player-1": {ID: "player-1", DisplayName: "Ada Striker", PositionCode: "FWD"},
-	}}, cacheStub{entries: []CachedEntry{{PlayerID: "player-1", CompetitionRank: 1, OrdinalRank: 1, PointsMilli: 1250}}})
+	}}, &cacheStub{entries: []CachedEntry{{PlayerID: "player-1", CompetitionRank: 1, OrdinalRank: 1, PointsMilli: 1250}}})
 
 	entries, err := service.List(context.Background(), Query{Limit: 10})
 	if err != nil {
@@ -39,10 +43,24 @@ func TestServiceEnrichesCachedRanking(t *testing.T) {
 
 func TestServiceFallsBackWhenCacheFails(t *testing.T) {
 	fallback := []Entry{{PlayerID: "player-2"}}
-	service := NewService(repositoryStub{entries: fallback}, cacheStub{err: errors.New("offline")})
+	service := NewService(repositoryStub{entries: fallback}, &cacheStub{err: errors.New("offline")})
 	entries, err := service.List(context.Background(), Query{})
 	if err != nil || len(entries) != 1 || entries[0].PlayerID != "player-2" {
 		t.Fatalf("expected PostgreSQL fallback, got %#v, %v", entries, err)
+	}
+}
+
+func TestServiceBypassesCacheForDefaultMatchRatings(t *testing.T) {
+	fallback := []Entry{{PlayerID: "rated-player", PointsMilli: 7350}}
+	cache := &cacheStub{entries: []CachedEntry{{PlayerID: "stale-player"}}}
+	service := NewService(repositoryStub{entries: fallback}, cache)
+
+	entries, err := service.List(context.Background(), Query{ScoringModelID: PlayerMatchRatingModelID})
+	if err != nil || len(entries) != 1 || entries[0].PlayerID != "rated-player" {
+		t.Fatalf("expected PostgreSQL ratings, got %#v, %v", entries, err)
+	}
+	if cache.calls != 0 {
+		t.Fatalf("expected rating query to bypass Redis, got %d calls", cache.calls)
 	}
 }
 

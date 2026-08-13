@@ -41,11 +41,15 @@ func (leaderboardStub) List(context.Context, leaderboard.Query) ([]leaderboard.E
 }
 
 func testHandler(t *testing.T) http.Handler {
+	return testHandlerWithScoringModel(t, "model")
+}
+
+func testHandlerWithScoringModel(t *testing.T, scoringModelID string) http.Handler {
 	t.Helper()
 	check := func(context.Context) error { return nil }
 	handler, err := New(Config{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Leaderboard: leaderboardStub{},
-		EditionID: "edition", ScoringModelID: "model", DatabaseCheck: check, RedisCheck: check,
+		EditionID: "edition", ScoringModelID: scoringModelID, DatabaseCheck: check, RedisCheck: check,
 		Auth: authStub{},
 	})
 	if err != nil {
@@ -59,6 +63,22 @@ func TestHomeRendersLeaderboard(t *testing.T) {
 	testHandler(t).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "Ada Striker") {
 		t.Fatalf("unexpected response: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestHomeLabelsDefaultModelAsPlayerRating(t *testing.T) {
+	response := httptest.NewRecorder()
+	testHandlerWithScoringModel(t, leaderboard.PlayerMatchRatingModelID).ServeHTTP(
+		response,
+		httptest.NewRequest(http.MethodGet, "/", nil),
+	)
+
+	body := response.Body.String()
+	if response.Code != http.StatusOK || !strings.Contains(body, `class="points">Rating</th>`) {
+		t.Fatalf("expected rating leaderboard: %d %s", response.Code, body)
+	}
+	if !strings.Contains(body, "Ratings are averaged across rated matches") {
+		t.Fatal("expected rating explanation")
 	}
 }
 

@@ -35,9 +35,11 @@ make test
 make run
 ```
 
-Open <http://localhost:8080>. Set `EDITION_ID` and `SCORING_MODEL_ID` in `.env`
-after loading and scoring an edition. Local registration and password login work
-without any third-party credentials. To run everything in containers:
+Open <http://localhost:8080>. Set `EDITION_ID` in `.env`. The default
+`SCORING_MODEL_ID=default` ranks players by their average non-null
+`player_match_stat.rating` across that edition. Set it to a `scoring_model` UUID
+after publishing custom scores instead. Local registration and password login
+work without any third-party credentials. To run everything in containers:
 
 ```bash
 make dev
