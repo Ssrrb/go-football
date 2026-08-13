@@ -19,7 +19,24 @@ Rank Queries: Use Redis commands to query user ranks and leaderboard positions.
 
 ## Data 
 
-The data is provided by APF official site, SofaScore and 365 scores.
+The canonical data source is the official APF site. Its current Opta-backed
+payload includes fixtures, results, lineups, events, team statistics, and
+per-player statistics. See [the extraction decision](data/sources/extraction.md)
+for the reliability analysis, endpoint discovery, identifiers, correction
+strategy, and compliance caveat.
+
+Quick source check:
+
+```bash
+PYTHONPATH=src python3 -m go_football_sources.cli discover
+PYTHONPATH=src python3 -m go_football_sources.cli round 4 --details finished
+```
+
+Run the source adapter tests with:
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+```
 
 ## Stack
 
@@ -29,4 +46,3 @@ The data is provided by APF official site, SofaScore and 365 scores.
 - Htmx
 - Psql
 - Docker
-
