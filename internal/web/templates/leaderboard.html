@@ -1,34 +1,55 @@
-{{define "leaderboard"}}<section id="leaderboard" class="card" aria-live="polite"
+{{define "leaderboard"}}<section id="leaderboard" class="leaderboard" aria-live="polite"
   {{if .Configured}}hx-get="{{.RefreshURL}}" hx-trigger="every 15s" hx-swap="outerHTML"{{end}}>
   {{if not .Configured}}
-    <div class="state">
-      <h2>Leaderboard not selected</h2>
-      <p>Set <code>EDITION_ID</code> and <code>SCORING_MODEL_ID</code> to publish a leaderboard.</p>
+    <div class="card state">
+      <h2>Clasificación sin configurar</h2>
+      <p>Define <code>EDITION_ID</code> y <code>SCORING_MODEL_ID</code> para publicar el ranking.</p>
     </div>
   {{else if .ErrorMessage}}
-    <div class="state error"><h2>Unable to load scores</h2><p>{{.ErrorMessage}}</p></div>
+    <div class="card state error"><h2>No se pudieron cargar los resultados</h2><p>{{.ErrorMessage}}</p></div>
   {{else if not .Entries}}
-    {{if .RatingMode}}
-      <div class="state"><h2>No player ratings yet</h2><p>The table will update automatically after rated matches are loaded.</p></div>
-    {{else}}
-      <div class="state"><h2>No published scores yet</h2><p>The table will update automatically after scoring is published.</p></div>
-    {{end}}
-  {{else}}
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th scope="col">Rank</th><th scope="col">Player</th><th scope="col">Position</th><th scope="col" class="points">{{if .RatingMode}}Rating{{else}}Points{{end}}</th></tr></thead>
-        <tbody>
-          {{range .Entries}}
-          <tr>
-            <td class="rank">{{.CompetitionRank}}</td>
-            <td><strong>{{.PlayerName}}</strong></td>
-            <td><span class="position">{{if .PositionCode}}{{.PositionCode}}{{else}}—{{end}}</span></td>
-            <td class="points"><strong>{{.Points}}</strong></td>
-          </tr>
-          {{end}}
-        </tbody>
-      </table>
+    <div class="card state">
+      {{if .RatingMode}}
+        <h2>Todavía no hay calificaciones</h2><p>La tabla se actualizará automáticamente cuando se carguen partidos evaluados.</p>
+      {{else}}
+        <h2>Todavía no hay puntuaciones publicadas</h2><p>La tabla se actualizará automáticamente cuando se publique el modelo.</p>
+      {{end}}
     </div>
-    <p class="updated">Updated {{.UpdatedAt.Format "15:04:05 UTC"}}</p>
+  {{else}}
+    <div class="section-head podium-head">
+      <div><div class="kicker">Primeros puestos</div><h2>Destacados de la edición</h2></div>
+      <span class="mono">Empates comparten puesto</span>
+    </div>
+    <div class="podium">
+      {{range .TopEntries}}
+      <article class="card pod">
+        <div class="rank">#{{.CompetitionRank}}</div>
+        <h3>{{.PlayerName}}</h3>
+        <p>{{if .PositionCode}}{{.PositionCode}}{{else}}Sin posición{{end}} · {{.Points}} {{if $.RatingMode}}de calificación{{else}}puntos{{end}}</p>
+      </article>
+      {{end}}
+    </div>
+
+    <section class="card table-card" aria-label="Jugadores clasificados">
+      <div class="table-toolbar">
+        <div><div class="kicker">Top 50</div><h2>Jugadores clasificados</h2></div>
+        <span class="updated">Actualizado {{.UpdatedAt.Format "15:04:05 UTC"}}</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">Puesto</th><th scope="col">Jugador</th><th scope="col">Posición</th><th scope="col" class="points">{{if .RatingMode}}Rating{{else}}Puntos{{end}}</th></tr></thead>
+          <tbody>
+            {{range .Entries}}
+            <tr>
+              <td class="rank">#{{.CompetitionRank}}</td>
+              <td><strong>{{.PlayerName}}</strong></td>
+              <td><span class="position">{{if .PositionCode}}{{.PositionCode}}{{else}}—{{end}}</span></td>
+              <td class="points"><strong>{{.Points}}</strong></td>
+            </tr>
+            {{end}}
+          </tbody>
+        </table>
+      </div>
+    </section>
   {{end}}
 </section>{{end}}

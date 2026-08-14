@@ -1,67 +1,46 @@
 {{define "auth_head"}}<!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
-  <title>Go Football · Account</title>
+  <title>Go Football · Cuenta</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script src="/assets/htmx.min.js" defer></script>
 </head>
 <body class="auth-body">
-  <header class="site-header">
-    <a class="brand" href="/" aria-label="Go Football home">
-      <span class="brand-mark">GF</span><span>Go Football</span>
-    </a>
-  </header>
+  <header class="auth-header"><a class="brand" href="/" aria-label="Volver a Go Football"><img class="brand-logo" src="/assets/go-football-logo.svg" alt=""><span>Go Football <small>/ ranking APF</small></span></a></header>
   <main class="auth-shell">{{end}}
 
-{{define "auth_foot"}}</main>
-</body>
-</html>{{end}}
-
+{{define "auth_foot"}}</main></body></html>{{end}}
 {{define "login_page"}}{{template "auth_head" .}}{{template "login_form" .}}{{template "auth_foot" .}}{{end}}
 {{define "register_page"}}{{template "auth_head" .}}{{template "register_form" .}}{{template "auth_foot" .}}{{end}}
 
-{{define "login_form"}}<section id="auth-panel" class="auth-card">
-  <p class="eyebrow">Welcome back</p>
-  <h1>Sign in</h1>
-  <p class="auth-intro">Follow your league with your Go Football account.</p>
+{{define "login_form"}}<section id="auth-panel" class="auth-card card">
+  <p class="kicker">Bienvenido de nuevo</p><h1>Iniciar sesión</h1>
+  <p class="auth-intro">Accede a tu cuenta de Go Football.</p>
   {{if .ErrorMessage}}<div class="form-error" role="alert">{{.ErrorMessage}}</div>{{end}}
   <form class="auth-form" action="/login" method="post" hx-post="/login" hx-target="#auth-panel" hx-swap="outerHTML">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <label for="login-email">Email</label>
-    <input id="login-email" name="email" type="email" autocomplete="email" required autofocus>
-    <label for="login-password">Password</label>
-    <input id="login-password" name="password" type="password" autocomplete="current-password" required>
-    <button type="submit">Sign in</button>
+    <label for="login-email">Correo electrónico</label><input id="login-email" name="email" type="email" autocomplete="email" required autofocus>
+    <label for="login-password">Contraseña</label><input id="login-password" name="password" type="password" autocomplete="current-password" required>
+    <button class="btn btn-dark" type="submit">Iniciar sesión</button>
   </form>
-  {{if .GoogleEnabled}}
-    <div class="divider"><span>or</span></div>
-    <a class="google-button" href="/auth/google"><span aria-hidden="true">G</span> Continue with Google</a>
-  {{end}}
-  <p class="auth-switch">New to Go Football? <a href="/register">Create an account</a></p>
+  {{if .GoogleEnabled}}<div class="divider"><span>o</span></div><a class="google-button" href="/auth/google"><span aria-hidden="true">G</span> Continuar con Google</a>{{end}}
+  <p class="auth-switch">¿No tienes una cuenta? <a href="/register">Crear una cuenta</a></p>
 </section>{{end}}
 
-{{define "register_form"}}<section id="auth-panel" class="auth-card">
-  <p class="eyebrow">Join the league</p>
-  <h1>Create account</h1>
-  <p class="auth-intro">Save your preferences and get more from the leaderboard.</p>
+{{define "register_form"}}<section id="auth-panel" class="auth-card card">
+  <p class="kicker">Únete a la liga</p><h1>Crear cuenta</h1>
+  <p class="auth-intro">Regístrate para aprovechar todas las funciones de Go Football.</p>
   {{if .ErrorMessage}}<div class="form-error" role="alert">{{.ErrorMessage}}</div>{{end}}
   <form class="auth-form" action="/register" method="post" hx-post="/register" hx-target="#auth-panel" hx-swap="outerHTML">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <label for="register-name">Display name</label>
-    <input id="register-name" name="display_name" type="text" minlength="2" maxlength="80" autocomplete="name" required autofocus>
-    <label for="register-email">Email</label>
-    <input id="register-email" name="email" type="email" autocomplete="email" required>
-    <label for="register-password">Password</label>
-    <input id="register-password" name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
-    <p class="field-help">Use 8–72 characters.</p>
-    <button type="submit">Create account</button>
+    <label for="register-name">Nombre visible</label><input id="register-name" name="display_name" type="text" minlength="2" maxlength="80" autocomplete="name" required autofocus>
+    <label for="register-email">Correo electrónico</label><input id="register-email" name="email" type="email" autocomplete="email" required>
+    <label for="register-password">Contraseña</label><input id="register-password" name="password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required>
+    <p class="field-help">Usa entre 8 y 72 caracteres.</p><button class="btn btn-dark" type="submit">Crear cuenta</button>
   </form>
-  {{if .GoogleEnabled}}
-    <div class="divider"><span>or</span></div>
-    <a class="google-button" href="/auth/google"><span aria-hidden="true">G</span> Continue with Google</a>
-  {{end}}
-  <p class="auth-switch">Already have an account? <a href="/login">Sign in</a></p>
+  {{if .GoogleEnabled}}<div class="divider"><span>o</span></div><a class="google-button" href="/auth/google"><span aria-hidden="true">G</span> Continuar con Google</a>{{end}}
+  <p class="auth-switch">¿Ya tienes una cuenta? <a href="/login">Iniciar sesión</a></p>
 </section>{{end}}

@@ -17,7 +17,7 @@ import (
 	"github.com/Ssrrb/go-football/internal/leaderboard"
 )
 
-//go:embed templates/*.html assets/*
+//go:embed templates/*.html assets/* public/clubs/*
 var files embed.FS
 
 // Leaderboard lists current leaderboard entries.
@@ -70,12 +70,23 @@ type server struct {
 	templates      *template.Template
 }
 
+type seasonAward struct {
+	Category    string
+	PlayerName  string
+	ClubName    string
+	ClubIconURL string
+}
+
 type pageData struct {
 	Entries      []leaderboard.Entry
+	TopEntries   []leaderboard.Entry
+	SeasonAwards []seasonAward
 	Position     string
 	Configured   bool
 	RatingMode   bool
+	PageURL      string
 	RefreshURL   string
+	ActivePage   string
 	ErrorMessage string
 	UpdatedAt    time.Time
 	User         *auth.User
@@ -95,6 +106,10 @@ func New(cfg Config) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load assets: %w", err)
 	}
+	public, err := fs.Sub(files, "public")
+	if err != nil {
+		return nil, fmt.Errorf("load public assets: %w", err)
+	}
 
 	s := &server{
 		logger: cfg.Logger, leaderboard: cfg.Leaderboard,
@@ -104,7 +119,9 @@ func New(cfg Config) (http.Handler, error) {
 		cookieSecure: cfg.CookieSecure, templates: templates,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", s.home)
+	mux.HandleFunc("GET /{$}", s.home)
+	mux.HandleFunc("GET /clasificacion", s.classification)
+	mux.HandleFunc("GET /metodologia", s.methodology)
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("GET /register", s.registerPage)
@@ -115,21 +132,27 @@ func New(cfg Config) (http.Handler, error) {
 	mux.HandleFunc("GET /health/live", live)
 	mux.HandleFunc("GET /health/ready", s.ready)
 	mux.Handle("GET /assets/", http.StripPrefix("/assets/", http.FileServer(http.FS(assets))))
+	mux.Handle("GET /public/", http.StripPrefix("/public/", http.FileServer(http.FS(public))))
 	return requestLogger(cfg.Logger, securityHeaders(mux)), nil
 }
 
 func (s *server) home(response http.ResponseWriter, request *http.Request) {
-	if request.URL.Path != "/" {
-		http.NotFound(response, request)
-		return
-	}
+	s.leaderboardPage(response, request, "/", "overview")
+}
+
+func (s *server) classification(response http.ResponseWriter, request *http.Request) {
+	s.leaderboardPage(response, request, "/clasificacion", "classification")
+}
+
+func (s *server) leaderboardPage(response http.ResponseWriter, request *http.Request, pageURL, activePage string) {
 	position := strings.ToUpper(request.URL.Query().Get("position"))
 	if position != "" && position != "GK" && position != "DEF" && position != "MID" && position != "FWD" {
 		http.Error(response, "invalid position", http.StatusBadRequest)
 		return
 	}
 
-	data := s.load(request, position)
+	data := s.load(request, position, pageURL)
+	data.ActivePage = activePage
 	data.User = s.currentUser(response, request)
 	data.CSRFToken = s.csrfToken(response, request)
 	response.Header().Add("Vary", "HX-Request, HX-History-Restore-Request")
@@ -140,17 +163,28 @@ func (s *server) home(response http.ResponseWriter, request *http.Request) {
 	s.render(response, request, http.StatusOK, "base", data)
 }
 
-func (s *server) load(request *http.Request, position string) pageData {
-	refreshURL := "/"
+func (s *server) methodology(response http.ResponseWriter, request *http.Request) {
+	data := pageData{
+		ActivePage: "methodology",
+		User:       s.currentUser(response, request),
+		CSRFToken:  s.csrfToken(response, request),
+	}
+	s.render(response, request, http.StatusOK, "methodology", data)
+}
+
+func (s *server) load(request *http.Request, position, pageURL string) pageData {
+	refreshURL := pageURL
 	if position != "" {
 		refreshURL += "?position=" + url.QueryEscape(position)
 	}
 	data := pageData{
-		Position:   position,
-		Configured: s.editionID != "" && s.scoringModelID != "",
-		RatingMode: s.scoringModelID == leaderboard.PlayerMatchRatingModelID,
-		RefreshURL: refreshURL,
-		UpdatedAt:  time.Now().UTC(),
+		SeasonAwards: pendingSeasonAwards(),
+		Position:     position,
+		Configured:   s.editionID != "" && s.scoringModelID != "",
+		RatingMode:   s.scoringModelID == leaderboard.PlayerMatchRatingModelID,
+		PageURL:      pageURL,
+		RefreshURL:   refreshURL,
+		UpdatedAt:    time.Now().UTC(),
 	}
 	if !data.Configured {
 		return data
@@ -161,11 +195,26 @@ func (s *server) load(request *http.Request, position string) pageData {
 	})
 	if err != nil {
 		s.report(request.Context(), "load leaderboard", err)
-		data.ErrorMessage = "The leaderboard is temporarily unavailable."
+		data.ErrorMessage = "La clasificación no está disponible temporalmente."
 		return data
 	}
 	data.Entries = entries
+	topCount := min(3, len(entries))
+	data.TopEntries = entries[:topCount]
 	return data
+}
+
+func pendingSeasonAwards() []seasonAward {
+	// TODO: Populate these winners with the six versioned season-award formulas
+	// tracked in TODO.md. Until then, the UI deliberately renders a pending state.
+	return []seasonAward{
+		{Category: "Jugador de la temporada"},
+		{Category: "Defensa de la temporada"},
+		{Category: "Portero de la temporada"},
+		{Category: "Jugador joven de la temporada (Sub-23)"},
+		{Category: "Suplente más decisivo de la temporada"},
+		{Category: "Jugador con mayor progresión"},
+	}
 }
 
 func (s *server) render(response http.ResponseWriter, request *http.Request, status int, name string, data any) {

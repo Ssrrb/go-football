@@ -1,58 +1,115 @@
+{{define "sidebar"}}
+<aside class="rail" data-od-id="primary-navigation">
+  <a class="brand" href="/" aria-label="Inicio de Go Football">
+    <img class="brand-logo" src="/assets/go-football-logo.svg" alt="">
+    <span>Go Football <small>/ ranking APF</small></span>
+  </a>
+  <div class="season" aria-label="Edición activa">Primera División Paraguaya</div>
+  <nav class="nav" aria-label="Navegación principal">
+    <a href="/" {{if eq .ActivePage "overview"}}class="active" aria-current="page"{{end}}>Resumen</a>
+    <a href="/clasificacion" {{if eq .ActivePage "classification"}}class="active" aria-current="page"{{end}}>Clasificación</a>
+    <a href="/metodologia" {{if eq .ActivePage "methodology"}}class="active" aria-current="page"{{end}}>Metodología</a>
+  </nav>
+  <div class="rail-account">
+    {{if .User}}
+      <div class="signed-user">
+        <span class="avatar" aria-hidden="true">GF</span>
+        <span><strong>{{.User.DisplayName}}</strong><small>Sesión activa</small></span>
+      </div>
+      <form action="/logout" method="post" hx-post="/logout">
+        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+        <button class="sidebar-logout" type="submit">Cerrar sesión</button>
+      </form>
+    {{else}}
+      <p>Guarda tus preferencias y sigue la liga.</p>
+      <a class="sidebar-login" href="/login">Iniciar sesión</a>
+    {{end}}
+  </div>
+</aside>
+{{end}}
+
 {{define "base"}}<!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Paraguayan Primera División player leaderboard">
-  <title>Go Football · Player leaderboard</title>
+  <meta name="description" content="Ranking de jugadores de la Primera División Paraguaya">
+  <title>Go Football · Clasificación de jugadores</title>
   <link rel="stylesheet" href="/assets/app.css">
   <script src="/assets/htmx.min.js" defer></script>
 </head>
 <body>
-  <header class="site-header">
-    <a class="brand" href="/" aria-label="Go Football home">
-      <span class="brand-mark">GF</span>
-      <span>Go Football</span>
-    </a>
-    <div class="header-actions">
-      <span class="competition">Primera División Paraguaya</span>
-      {{if .User}}
-        <span class="user-name">{{.User.DisplayName}}</span>
-        <form action="/logout" method="post" hx-post="/logout">
-          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-          <button class="text-button" type="submit">Sign out</button>
-        </form>
-      {{else}}
-        <a class="header-link" href="/login">Sign in</a>
+<div class="app">
+  {{template "sidebar" .}}
+  <main class="main">
+    <div class="content">
+      <header class="page-header">
+        <div>
+          <div class="kicker">Primera División Paraguaya · ranking de jugadores</div>
+          {{if eq .ActivePage "overview"}}
+            <h1>El rendimiento de la liga, en una sola tabla.</h1>
+            <p>Clasificaciones construidas con los datos de la edición activa. PostgreSQL conserva la fuente de verdad y Redis acelera los rankings publicados.</p>
+          {{else}}
+            <h1>Clasificación de jugadores.</h1>
+            <p>Consulta el ranking general o filtra por arquero, defensor, mediocampista y delantero. Se muestran hasta 50 jugadores.</p>
+          {{end}}
+        </div>
+        <span class="pill model">{{if .RatingMode}}Promedio de calificaciones{{else}}Modelo publicado{{end}}</span>
+      </header>
+
+      {{if eq .ActivePage "overview"}}
+      <section class="grid award-grid" aria-label="Premios de la temporada">
+        {{range .SeasonAwards}}
+        <article class="card award">
+          <div class="award-heading">
+            <div class="kicker">Premio de temporada</div>
+            {{if not .PlayerName}}<span class="award-status">Fórmula pendiente</span>{{end}}
+          </div>
+          <h2>{{.Category}}</h2>
+          <div class="award-player">
+            {{if .ClubIconURL}}
+              <img class="award-club-icon" src="{{.ClubIconURL}}" alt="{{.ClubName}}">
+            {{else}}
+              <span class="award-club-placeholder" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2.5 20 5v6.1c0 5-3.3 8.5-8 10.4-4.7-1.9-8-5.4-8-10.4V5l8-2.5Z"/><path d="m8.7 11.8 2.1 2.1 4.7-5"/></svg>
+              </span>
+            {{end}}
+            <strong>{{if .PlayerName}}{{.PlayerName}}{{else}}Por definir{{end}}</strong>
+          </div>
+        </article>
+        {{end}}
+      </section>
       {{end}}
+
+      <form class="filters card" action="{{.PageURL}}" method="get" aria-label="Filtros de clasificación"
+            hx-get="{{.PageURL}}" hx-target="#leaderboard" hx-swap="outerHTML"
+            hx-trigger="change from:select, submit" hx-push-url="true"
+            hx-indicator="#leaderboard-loading">
+        <div class="field">
+          <label for="position">Posición</label>
+          <select id="position" name="position">
+            <option value="" {{if eq .Position ""}}selected{{end}}>Todas las posiciones</option>
+            <option value="GK" {{if eq .Position "GK"}}selected{{end}}>Arqueros (GK)</option>
+            <option value="DEF" {{if eq .Position "DEF"}}selected{{end}}>Defensores (DEF)</option>
+            <option value="MID" {{if eq .Position "MID"}}selected{{end}}>Mediocampistas (MID)</option>
+            <option value="FWD" {{if eq .Position "FWD"}}selected{{end}}>Delanteros (FWD)</option>
+          </select>
+        </div>
+        <div class="field"><span class="field-label">Edición</span><span class="field-value">Clausura 2026</span></div>
+        <div class="field"><span class="field-label">Modelo</span><span class="field-value">{{if .RatingMode}}default{{else}}Personalizado{{end}}</span></div>
+        <button class="btn btn-dark" type="submit">Aplicar filtro</button>
+        <span id="leaderboard-loading" class="htmx-indicator" role="status">Actualizando…</span>
+      </form>
+
+      {{template "leaderboard" .}}
+
+      <section class="card method-summary">
+        <div><div class="kicker">Modelo activo</div><h2>{{if .RatingMode}}Promedio de calificaciones{{else}}Puntuación publicada{{end}}</h2></div>
+        <p>{{if .RatingMode}}El modo default promedia las calificaciones no nulas de cada jugador en la edición.<span class="sr-only" lang="en"> Ratings are averaged across rated matches in the selected edition.</span>{{else}}Los puntos corresponden a la versión publicada del modelo de puntuación configurado.{{end}} Los valores ausentes nunca se convierten en cero.</p>
+        <a class="btn" href="/metodologia">Leer metodología</a>
+      </section>
     </div>
-  </header>
-  <main class="shell">
-    <section class="hero">
-      <p class="eyebrow">Clausura 2026</p>
-      <h1>Player leaderboard</h1>
-      <p>{{if .RatingMode}}Players ranked by their average published match rating.{{else}}Live rankings backed by official APF match data.{{end}}</p>
-    </section>
-
-    <form class="filters" action="/" method="get" aria-label="Leaderboard filters"
-          hx-get="/" hx-target="#leaderboard" hx-swap="outerHTML"
-          hx-trigger="change from:select, submit" hx-push-url="true"
-          hx-indicator="#leaderboard-loading">
-      <label for="position">Position</label>
-      <select id="position" name="position">
-        <option value="" {{if eq .Position ""}}selected{{end}}>All positions</option>
-        <option value="GK" {{if eq .Position "GK"}}selected{{end}}>Goalkeepers</option>
-        <option value="DEF" {{if eq .Position "DEF"}}selected{{end}}>Defenders</option>
-        <option value="MID" {{if eq .Position "MID"}}selected{{end}}>Midfielders</option>
-        <option value="FWD" {{if eq .Position "FWD"}}selected{{end}}>Forwards</option>
-      </select>
-      <button type="submit">Apply</button>
-      <span id="leaderboard-loading" class="htmx-indicator" role="status">Updating…</span>
-      <span class="live"><span></span> Live</span>
-    </form>
-
-    {{template "leaderboard" .}}
   </main>
-  <footer>{{if .RatingMode}}Ratings are averaged across rated matches in the selected edition.{{else}}Scores are shown in points and refreshed from the current published model.{{end}}</footer>
+</div>
 </body>
 </html>{{end}}

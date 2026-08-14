@@ -1,0 +1,37 @@
+{{define "methodology"}}<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Metodología del ranking de Go Football">
+  <title>Go Football · Metodología</title>
+  <link rel="stylesheet" href="/assets/app.css">
+  <script src="/assets/htmx.min.js" defer></script>
+</head>
+<body>
+<div class="app">
+  {{template "sidebar" .}}
+  <main class="main">
+    <div class="ticker"><span class="pill live"><span class="status-dot"></span>Datos trazables</span><span class="ticker-item"><strong>Fuente:</strong> feed oficial de la APF.</span></div>
+    <div class="content">
+      <header class="page-header">
+        <div><div class="kicker">Metodología · trazabilidad</div><h1>Datos verificables, rankings reproducibles.</h1><p>Go Football conserva la fuente, las correcciones y las versiones de puntuación. PostgreSQL es autoritativo y Redis es una proyección reconstruible.</p></div>
+        <span class="pill model">Contexto del proyecto</span>
+      </header>
+      <section class="grid method-grid">
+        <article class="card method"><div class="kicker">Principio</div><h2>Fuente canónica</h2><p>La ETL extrae el feed oficial APF/Opta. Los UUID de origen se conservan y las respuestas materiales se registran como snapshots inmutables.</p></article>
+        <article class="card method"><div class="kicker">Principio</div><h2>Modelo predeterminado</h2><p><code>SCORING_MODEL_ID=default</code> ordena por el promedio de las calificaciones no nulas de cada jugador en la edición configurada.</p></article>
+        <article class="card method"><div class="kicker">Principio</div><h2>Modelos personalizados</h2><p>Un UUID selecciona puntuaciones publicadas y versionadas. Los puntos se almacenan como milipuntos enteros: 1250 representa 1,250.</p></article>
+        <article class="card method"><div class="kicker">Principio</div><h2>Posiciones</h2><p>Los filtros admitidos son GK, DEF, MID y FWD. Un jugador sin posición resuelta aparece en la clasificación general, pero no en una posicional.</p></article>
+        <article class="card method"><div class="kicker">Principio</div><h2>Empates</h2><p>Las puntuaciones iguales comparten <code>competition_rank</code>. <code>ordinal_rank</code> solo ofrece un orden estable y no es un desempate deportivo.</p></article>
+        <article class="card method"><div class="kicker">Principio</div><h2>Lectura y recuperación</h2><p>El servicio consulta Redis para modelos personalizados y vuelve a PostgreSQL si la caché está vacía o no disponible.</p></article>
+      </section>
+      <section class="card method integrity">
+        <div class="kicker">Reglas de integridad</div><h2>Sin inferencias silenciosas</h2>
+        <ul><li>Un dato ausente permanece <code>NULL</code>; no equivale a cero.</li><li>Jugadores, equipos y partidos se vinculan por identificadores, nunca por nombres visibles.</li><li>Redis puede reconstruirse por completo desde PostgreSQL.</li><li>La interfaz no promete una latencia que la fuente no garantiza.</li></ul>
+      </section>
+    </div>
+  </main>
+</div>
+</body>
+</html>{{end}}

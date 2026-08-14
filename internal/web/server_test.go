@@ -66,6 +66,61 @@ func TestHomeRendersLeaderboard(t *testing.T) {
 	}
 }
 
+func TestHomeUsesExternalStylesAndShowsSidebarLogin(t *testing.T) {
+	response := httptest.NewRecorder()
+	testHandler(t).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := response.Body.String()
+	if !strings.Contains(body, `href="/assets/app.css"`) || strings.Contains(body, "<style") {
+		t.Fatal("expected styles to be loaded from the CSS asset")
+	}
+	if !strings.Contains(body, `class="sidebar-login" href="/login"`) {
+		t.Fatal("expected login button in the sidebar")
+	}
+}
+
+func TestHomeShowsSeasonAwardCardsWithoutPlayerPhotos(t *testing.T) {
+	response := httptest.NewRecorder()
+	testHandler(t).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/", nil))
+	body := response.Body.String()
+	categories := []string{
+		"Jugador de la temporada",
+		"Defensa de la temporada",
+		"Portero de la temporada",
+		"Jugador joven de la temporada (Sub-23)",
+		"Suplente más decisivo de la temporada",
+		"Jugador con mayor progresión",
+	}
+	for _, category := range categories {
+		if !strings.Contains(body, category) {
+			t.Fatalf("expected season award %q", category)
+		}
+	}
+	if count := strings.Count(body, `class="card award"`); count != len(categories) {
+		t.Fatalf("expected %d season award cards, got %d", len(categories), count)
+	}
+	if strings.Contains(body, "award-player-photo") {
+		t.Fatal("season award cards must not render player photos")
+	}
+}
+
+func TestClubIconsAreServed(t *testing.T) {
+	response := httptest.NewRecorder()
+	testHandler(t).ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/public/clubs/cerro-porteno.png", nil))
+	if response.Code != http.StatusOK || !strings.HasPrefix(response.Header().Get("Content-Type"), "image/") {
+		t.Fatalf("unexpected club icon response: %d %q", response.Code, response.Header().Get("Content-Type"))
+	}
+}
+
+func TestClassificationAndMethodologyPages(t *testing.T) {
+	for _, path := range []string{"/clasificacion?position=FWD", "/metodologia"} {
+		response := httptest.NewRecorder()
+		testHandler(t).ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned %d", path, response.Code)
+		}
+	}
+}
+
 func TestHomeLabelsDefaultModelAsPlayerRating(t *testing.T) {
 	response := httptest.NewRecorder()
 	testHandlerWithScoringModel(t, leaderboard.PlayerMatchRatingModelID).ServeHTTP(
