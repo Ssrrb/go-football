@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/subtle"
 	"errors"
 	"net/http"
@@ -21,6 +22,26 @@ type authPageData struct {
 	CSRFToken     string
 	ErrorMessage  string
 	GoogleEnabled bool
+}
+
+type authenticatedUserContextKey struct{}
+
+func (s *server) requireAuth(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		user := s.currentUser(response, request)
+		if user == nil {
+			response.Header().Set("Cache-Control", "no-store")
+			if strings.EqualFold(request.Header.Get("HX-Request"), "true") {
+				response.Header().Set("HX-Redirect", "/login")
+				response.WriteHeader(http.StatusNoContent)
+				return
+			}
+			http.Redirect(response, request, "/login", http.StatusSeeOther)
+			return
+		}
+		ctx := context.WithValue(request.Context(), authenticatedUserContextKey{}, user)
+		next.ServeHTTP(response, request.WithContext(ctx))
+	})
 }
 
 func (s *server) loginPage(response http.ResponseWriter, request *http.Request) {
@@ -111,11 +132,11 @@ func (s *server) logout(response http.ResponseWriter, request *http.Request) {
 	}
 	s.clearCookie(response, sessionCookieName, http.SameSiteLaxMode)
 	if request.Header.Get("HX-Request") == "true" {
-		response.Header().Set("HX-Redirect", "/")
+		response.Header().Set("HX-Redirect", "/login")
 		response.WriteHeader(http.StatusNoContent)
 		return
 	}
-	http.Redirect(response, request, "/", http.StatusSeeOther)
+	http.Redirect(response, request, "/login", http.StatusSeeOther)
 }
 
 func (s *server) googleStart(response http.ResponseWriter, request *http.Request) {
@@ -180,6 +201,9 @@ func (s *server) startSession(response http.ResponseWriter, request *http.Reques
 }
 
 func (s *server) currentUser(response http.ResponseWriter, request *http.Request) *auth.User {
+	if user, ok := request.Context().Value(authenticatedUserContextKey{}).(*auth.User); ok {
+		return user
+	}
 	cookie, err := request.Cookie(sessionCookieName)
 	if err != nil {
 		return nil

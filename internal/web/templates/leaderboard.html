@@ -25,7 +25,11 @@
       <article class="card pod">
         <div class="rank">#{{.CompetitionRank}}</div>
         <h3>{{.PlayerName}}</h3>
-        <p>{{if .PositionCode}}{{.PositionCode}}{{else}}Sin posición{{end}} · {{.Points}} {{if $.RatingMode}}de calificación{{else}}puntos{{end}}</p>
+        <div class="pod-team">
+          {{if clubLogoURL .TeamName}}<img class="team-logo" src="{{clubLogoURL .TeamName}}" alt="Escudo de {{.TeamName}}">{{end}}
+          <span>{{if .TeamName}}{{.TeamName}}{{else}}Equipo sin identificar{{end}}</span>
+        </div>
+        <p>{{if .PositionCode}}{{.PositionCode}}{{else}}Sin posición{{end}} · {{.Points}} {{if $.RatingMode}}de rating ajustado · {{.Minutes}} min{{else}}puntos{{end}}</p>
       </article>
       {{end}}
     </div>
@@ -37,13 +41,20 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th scope="col">Puesto</th><th scope="col">Jugador</th><th scope="col">Posición</th><th scope="col" class="points">{{if .RatingMode}}Rating{{else}}Puntos{{end}}</th></tr></thead>
+          <thead><tr><th scope="col">Puesto</th><th scope="col">Jugador</th><th scope="col">Equipo</th><th scope="col">Posición</th>{{if .RatingMode}}<th scope="col" class="points">PJ eval.</th><th scope="col" class="points">Min</th><th scope="col" class="points">Confianza</th>{{end}}<th scope="col" class="points">{{if .RatingMode}}Rating ajustado{{else}}Puntos{{end}}</th></tr></thead>
           <tbody>
             {{range .Entries}}
             <tr>
               <td class="rank">#{{.CompetitionRank}}</td>
               <td><strong>{{.PlayerName}}</strong></td>
+              <td>
+                <span class="team">
+                  {{if clubLogoURL .TeamName}}<img class="team-logo" src="{{clubLogoURL .TeamName}}" alt="Escudo de {{.TeamName}}">{{end}}
+                  <span>{{if .TeamName}}{{.TeamName}}{{else}}—{{end}}</span>
+                </span>
+              </td>
               <td><span class="position">{{if .PositionCode}}{{.PositionCode}}{{else}}—{{end}}</span></td>
+              {{if $.RatingMode}}<td class="points">{{.Appearances}}</td><td class="points">{{.Minutes}}</td><td class="points">{{.SampleConfidence}}</td>{{end}}
               <td class="points"><strong>{{.Points}}</strong></td>
             </tr>
             {{end}}

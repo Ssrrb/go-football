@@ -460,6 +460,96 @@ CREATE TABLE team_of_week_player (
     UNIQUE (team_of_week_id, player_id)
 );
 
+-- Season-award policies are independent of match scoring models. Each published
+-- formula is immutable; a policy change creates the next version.
+CREATE TABLE season_award_formula (
+    id              uuid PRIMARY KEY,
+    award_code      text NOT NULL CHECK (award_code ~ '^[A-Z][A-Z0-9_]+$'),
+    name            text NOT NULL,
+    version         integer NOT NULL CHECK (version > 0),
+    status          text NOT NULL CHECK (status IN ('draft', 'active', 'retired')),
+    points_scale    integer NOT NULL DEFAULT 1000 CHECK (points_scale = 1000),
+    formula         jsonb NOT NULL,
+    published_at    timestamptz,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    UNIQUE (award_code, version),
+    UNIQUE (id, award_code),
+    CHECK (jsonb_typeof(formula) = 'object'),
+    CHECK ((status = 'draft') = (published_at IS NULL))
+);
+
+CREATE UNIQUE INDEX season_award_formula_one_active_idx
+    ON season_award_formula (award_code) WHERE status = 'active';
+
+CREATE FUNCTION protect_published_season_award_formula() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        IF OLD.published_at IS NOT NULL THEN
+            RAISE EXCEPTION 'published season award formulas are immutable; retire them instead';
+        END IF;
+        RETURN OLD;
+    END IF;
+    IF OLD.published_at IS NOT NULL AND (
+        NEW.id IS DISTINCT FROM OLD.id OR
+        NEW.award_code IS DISTINCT FROM OLD.award_code OR
+        NEW.name IS DISTINCT FROM OLD.name OR
+        NEW.version IS DISTINCT FROM OLD.version OR
+        NEW.points_scale IS DISTINCT FROM OLD.points_scale OR
+        NEW.formula IS DISTINCT FROM OLD.formula OR
+        NEW.published_at IS DISTINCT FROM OLD.published_at
+    ) THEN
+        RAISE EXCEPTION 'published season award formulas are immutable; create a new version';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER season_award_formula_immutable
+BEFORE UPDATE OR DELETE ON season_award_formula
+FOR EACH ROW EXECUTE FUNCTION protect_published_season_award_formula();
+
+-- Recalculations caused by source corrections create a new selection version.
+-- input_sha256 identifies the normalized edition facts used by the run.
+CREATE TABLE season_award_selection (
+    id                  uuid PRIMARY KEY,
+    formula_id          uuid NOT NULL,
+    award_code          text NOT NULL,
+    edition_id          uuid NOT NULL REFERENCES edition(id),
+    selection_version   integer NOT NULL CHECK (selection_version > 0),
+    state               text NOT NULL CHECK (state IN ('calculated', 'published', 'superseded', 'failed')),
+    is_current          boolean NOT NULL DEFAULT false,
+    input_sha256        char(64) NOT NULL CHECK (input_sha256 ~ '^[0-9a-f]{64}$'),
+    input_cutoff_at     timestamptz NOT NULL,
+    error_message       text,
+    calculated_at       timestamptz NOT NULL DEFAULT now(),
+    published_at        timestamptz,
+    FOREIGN KEY (formula_id, award_code) REFERENCES season_award_formula(id, award_code),
+    UNIQUE (edition_id, award_code, selection_version),
+    CHECK ((state = 'failed') = (error_message IS NOT NULL)),
+    CHECK (NOT is_current OR state = 'published'),
+    CHECK ((state IN ('published', 'superseded')) = (published_at IS NOT NULL))
+);
+
+CREATE UNIQUE INDEX season_award_selection_one_current_idx
+    ON season_award_selection (edition_id, award_code) WHERE is_current;
+
+CREATE TABLE season_award_candidate (
+    selection_id        uuid NOT NULL REFERENCES season_award_selection(id) ON DELETE CASCADE,
+    player_id           uuid NOT NULL REFERENCES player(id),
+    team_id             uuid REFERENCES team(id),
+    rank                integer NOT NULL CHECK (rank > 0),
+    score_milli         bigint NOT NULL CHECK (score_milli BETWEEN 0 AND 100000),
+    minutes             integer NOT NULL CHECK (minutes >= 0),
+    breakdown           jsonb NOT NULL,
+    PRIMARY KEY (selection_id, player_id),
+    UNIQUE (selection_id, rank),
+    CHECK (jsonb_typeof(breakdown) = 'object')
+);
+
+CREATE INDEX season_award_candidate_ranking_idx
+    ON season_award_candidate (selection_id, rank);
+
 -- Authentication is independent of football identity. No requirement currently
 -- awards points to application users; Redis members are player UUIDs.
 CREATE TABLE app_user (

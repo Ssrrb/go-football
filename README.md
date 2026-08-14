@@ -22,6 +22,7 @@ etl/                     Standalone Python APF ETL package and tests
 data/db/                 Schema and ordered SQL migrations
 data/sources/            Source research and extraction decisions
 docs/architecture.md     Components and data flow
+docs/season-awards.md    Versioned season-award methodology
 ```
 
 ## Quick start
@@ -38,8 +39,11 @@ make run
 Open <http://localhost:8080>. `make run` watches Go files, templates, CSS, and
 JavaScript and automatically rebuilds and restarts the service after a change;
 refresh the browser without restarting the terminal. Set `EDITION_ID` in `.env`.
-The default `SCORING_MODEL_ID=default` ranks players by their average non-null
-`player_match_stat.rating` across that edition. Set it to a `scoring_model` UUID
+The default `SCORING_MODEL_ID=default` recalculates the ranking from finished
+matches in the edition. It weights each non-null `player_match_stat.rating` by
+minutes and shrinks small samples toward the edition mean with a 450-minute
+prior, so one short appearance cannot dominate sustained performance. Set it to
+a `scoring_model` UUID
 after publishing custom scores instead. Local registration and password login
 work without any third-party credentials. To run everything in containers with
 the same live-reload behavior:
@@ -56,18 +60,26 @@ the next file change.
 PostgreSQL bootstrap migrations run only when its Docker volume is first
 created. Use `docker compose down -v` to intentionally recreate a local database.
 For an existing database, apply each outstanding migration once in numeric order.
-For example, to add the normalized SofaScore player rating:
+For example, to add the normalized SofaScore player rating and the six active
+season-award formula versions:
 
 ```bash
 psql "$DATABASE_URL" -f data/db/migrations/004_player_match_rating.sql
+psql "$DATABASE_URL" -f data/db/migrations/005_season_awards.sql
 ```
+
+The award migration stores immutable v1 formulas and creates auditable,
+versioned selections. See [`docs/season-awards.md`](docs/season-awards.md) for
+weights, eligibility, progression windows, and tie-breakers.
 
 ## Authentication
 
-The web app supports email/password accounts and optional Google OAuth. Passwords
-are bcrypt-hashed, while only SHA-256 hashes of opaque session tokens are stored
-in PostgreSQL. Login, registration, and logout forms use CSRF tokens and work
-with both standard form submissions and HTMX.
+The web app supports email/password accounts and optional Google OAuth. The
+leaderboard, classification, and methodology pages require an active session;
+visitors without one are redirected to `/login`, where they can sign in or go to
+registration. Passwords are bcrypt-hashed, while only SHA-256 hashes of opaque
+session tokens are stored in PostgreSQL. Login, registration, and logout forms
+use CSRF tokens and work with both standard form submissions and HTMX.
 
 To enable Google sign-in:
 
@@ -124,7 +136,7 @@ jobs, not unit tests. See [`etl/README.md`](etl/README.md) and the
 
 | Route | Purpose |
 | --- | --- |
-| `GET /?position=GK` | Full leaderboard page, or an HTMX fragment when `HX-Request: true` |
+| `GET /?position=GK` | Authenticated leaderboard page, or an HTMX fragment when `HX-Request: true` |
 | `GET/POST /register` | Local account registration form and submission |
 | `GET/POST /login` | Local login form and submission |
 | `POST /logout` | Revoke the current session |

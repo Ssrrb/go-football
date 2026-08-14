@@ -20,10 +20,11 @@ flowchart LR
 
 ## Boundaries
 
-- **`cmd/web` and `internal/`**: the Go composition root, HTTP delivery, and
-  leaderboard application code. HTML is rendered on the server; HTMX replaces
-  only the leaderboard fragment and polls every 15 seconds. The same process
-  serves local/Google sign-in and HTMX-enhanced authentication forms.
+- **`cmd/web` and `internal/`**: the Go composition root, HTTP delivery,
+  leaderboard application code, and immutable season-award catalog/evaluator.
+  HTML is rendered on the server; HTMX replaces only the leaderboard fragment
+  and polls every 15 seconds. The same process serves local/Google sign-in and
+  HTMX-enhanced authentication forms.
 - **`etl/`**: an isolated Python package for source discovery, extraction, raw
   payload retention, and normalization. It does not serve web traffic.
 - **`data/db/`**: PostgreSQL schema and ordered bootstrap migrations.

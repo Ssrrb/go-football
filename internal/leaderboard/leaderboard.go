@@ -7,7 +7,8 @@ import (
 )
 
 const (
-	defaultLimit = 50
+	defaultLimit       = 50
+	ratingPriorMinutes = 450
 
 	// PlayerMatchRatingModelID selects an edition leaderboard based on the
 	// provider-published player_match_stat rating instead of a scoring model.
@@ -20,7 +21,10 @@ type Entry struct {
 	OrdinalRank     int64
 	PlayerID        string
 	PlayerName      string
+	TeamName        string
 	PositionCode    string
+	Appearances     int64
+	Minutes         int64
 	PointsMilli     int64
 }
 
@@ -33,6 +37,16 @@ func (e Entry) Points() string {
 		value = -value
 	}
 	return fmt.Sprintf("%s%d.%03d", sign, value/1000, value%1000)
+}
+
+// SampleConfidence reports how much of the adjusted rating comes from the
+// player's own minutes; the remainder comes from the edition baseline.
+func (e Entry) SampleConfidence() string {
+	if e.Minutes <= 0 {
+		return "0%"
+	}
+	confidence := 100 * float64(e.Minutes) / float64(e.Minutes+ratingPriorMinutes)
+	return fmt.Sprintf("%.0f%%", confidence)
 }
 
 // Query identifies one leaderboard projection.
@@ -63,6 +77,7 @@ type Cache interface {
 type Player struct {
 	ID           string
 	DisplayName  string
+	TeamName     string
 	PositionCode string
 }
 
@@ -133,6 +148,7 @@ func enrich(cached []CachedEntry, players map[string]Player) []Entry {
 			OrdinalRank:     item.OrdinalRank,
 			PlayerID:        item.PlayerID,
 			PlayerName:      player.DisplayName,
+			TeamName:        player.TeamName,
 			PositionCode:    player.PositionCode,
 			PointsMilli:     item.PointsMilli,
 		})

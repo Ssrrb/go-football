@@ -54,7 +54,7 @@
             <p>Consulta el ranking general o filtra por arquero, defensor, mediocampista y delantero. Se muestran hasta 50 jugadores.</p>
           {{end}}
         </div>
-        <span class="pill model">{{if .RatingMode}}Promedio de calificaciones{{else}}Modelo publicado{{end}}</span>
+        <span class="pill model">{{if .RatingMode}}Rating ajustado por minutos{{else}}Modelo publicado{{end}}</span>
       </header>
 
       {{if eq .ActivePage "overview"}}
@@ -63,7 +63,7 @@
         <article class="card award">
           <div class="award-heading">
             <div class="kicker">Premio de temporada</div>
-            {{if not .PlayerName}}<span class="award-status">Fórmula pendiente</span>{{end}}
+            {{if not .PlayerName}}<span class="award-status">Fórmula v1 · ganador pendiente</span>{{end}}
           </div>
           <h2>{{.Category}}</h2>
           <div class="award-player">
@@ -82,9 +82,9 @@
       {{end}}
 
       <form class="filters card" action="{{.PageURL}}" method="get" aria-label="Filtros de clasificación"
-            hx-get="{{.PageURL}}" hx-target="#leaderboard" hx-swap="outerHTML"
+            {{if ne .ActivePage "overview"}}hx-get="{{.PageURL}}" hx-target="#leaderboard" hx-swap="outerHTML"
             hx-trigger="change from:select, submit" hx-push-url="true"
-            hx-indicator="#leaderboard-loading">
+            hx-indicator="#leaderboard-loading"{{end}}>
         <div class="field">
           <label for="position">Posición</label>
           <select id="position" name="position">
@@ -96,7 +96,19 @@
           </select>
         </div>
         <div class="field"><span class="field-label">Edición</span><span class="field-value">Clausura 2026</span></div>
+        {{if eq .ActivePage "overview"}}
+        <div class="field">
+          <label for="model">Modelo</label>
+          <select id="model" name="model">
+            <option value="" {{if eq .Model ""}}selected{{end}}>Todos los modelos</option>
+            {{range .SeasonAwardModels}}
+            <option value="{{.Model}}" {{if eq $.Model .Model}}selected{{end}}>{{.Category}}</option>
+            {{end}}
+          </select>
+        </div>
+        {{else}}
         <div class="field"><span class="field-label">Modelo</span><span class="field-value">{{if .RatingMode}}default{{else}}Personalizado{{end}}</span></div>
+        {{end}}
         <button class="btn btn-dark" type="submit">Aplicar filtro</button>
         <span id="leaderboard-loading" class="htmx-indicator" role="status">Actualizando…</span>
       </form>
@@ -104,8 +116,8 @@
       {{template "leaderboard" .}}
 
       <section class="card method-summary">
-        <div><div class="kicker">Modelo activo</div><h2>{{if .RatingMode}}Promedio de calificaciones{{else}}Puntuación publicada{{end}}</h2></div>
-        <p>{{if .RatingMode}}El modo default promedia las calificaciones no nulas de cada jugador en la edición.<span class="sr-only" lang="en"> Ratings are averaged across rated matches in the selected edition.</span>{{else}}Los puntos corresponden a la versión publicada del modelo de puntuación configurado.{{end}} Los valores ausentes nunca se convierten en cero.</p>
+        <div><div class="kicker">Modelo activo</div><h2>{{if .RatingMode}}Rating ajustado por minutos{{else}}Puntuación publicada{{end}}</h2></div>
+        <p>{{if .RatingMode}}El modo default usa solo partidos finalizados, pondera cada rating por los minutos y lo ajusta hacia la media de la edición con una muestra previa de 450 minutos. Esa corrección pierde peso a medida que el jugador acumula tiempo.<span class="sr-only" lang="en"> Ratings are averaged across rated matches, weighted by minutes, and adjusted for sample size.</span>{{else}}Los puntos corresponden a la versión publicada del modelo de puntuación configurado.{{end}} Los valores ausentes nunca se convierten en cero.</p>
         <a class="btn" href="/metodologia">Leer metodología</a>
       </section>
     </div>

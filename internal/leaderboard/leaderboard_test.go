@@ -29,14 +29,14 @@ func (c *cacheStub) Top(context.Context, Query) ([]CachedEntry, error) {
 
 func TestServiceEnrichesCachedRanking(t *testing.T) {
 	service := NewService(repositoryStub{players: map[string]Player{
-		"player-1": {ID: "player-1", DisplayName: "Ada Striker", PositionCode: "FWD"},
+		"player-1": {ID: "player-1", DisplayName: "Ada Striker", TeamName: "Club Olimpia", PositionCode: "FWD"},
 	}}, &cacheStub{entries: []CachedEntry{{PlayerID: "player-1", CompetitionRank: 1, OrdinalRank: 1, PointsMilli: 1250}}})
 
 	entries, err := service.List(context.Background(), Query{Limit: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 1 || entries[0].PlayerName != "Ada Striker" || entries[0].Points() != "1.250" {
+	if len(entries) != 1 || entries[0].PlayerName != "Ada Striker" || entries[0].TeamName != "Club Olimpia" || entries[0].Points() != "1.250" {
 		t.Fatalf("unexpected entries: %#v", entries)
 	}
 }
@@ -75,6 +75,19 @@ func TestPointsFormatsMillipointsExactly(t *testing.T) {
 	for value, expected := range map[int64]string{1250: "1.250", -5: "-0.005", 9_000_000_000_000_000: "9000000000000.000"} {
 		if actual := (Entry{PointsMilli: value}).Points(); actual != expected {
 			t.Errorf("Points() for %d = %q, want %q", value, actual, expected)
+		}
+	}
+}
+
+func TestSampleConfidenceGrowsWithMinutes(t *testing.T) {
+	for minutes, expected := range map[int64]string{
+		0:   "0%",
+		90:  "17%",
+		450: "50%",
+		900: "67%",
+	} {
+		if actual := (Entry{Minutes: minutes}).SampleConfidence(); actual != expected {
+			t.Errorf("SampleConfidence() for %d minutes = %q, want %q", minutes, actual, expected)
 		}
 	}
 }

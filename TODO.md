@@ -1,13 +1,13 @@
 - [x] Get reliable data sources and extract them
 - [x] Design the data model ([documentation](data/data-model.md), [PostgreSQL schema](data/db/schema.sql))
 - [ ] Define the scoring formula and Team of the Week
-- [ ] Crear y versionar las fórmulas de los premios de temporada:
-  - [ ] Jugador de la temporada
-  - [ ] Defensa de la temporada
-  - [ ] Portero de la temporada
-  - [ ] Jugador joven de la temporada (Sub-23)
-  - [ ] Suplente más decisivo de la temporada
-  - [ ] Jugador con mayor progresión
+- [x] Crear y versionar las fórmulas de los premios de temporada ([especificación v1](docs/season-awards.md)):
+  - [x] Jugador de la temporada
+  - [x] Defensa de la temporada
+  - [x] Portero de la temporada
+  - [x] Jugador joven de la temporada (Sub-23)
+  - [x] Suplente más decisivo de la temporada
+  - [x] Jugador con mayor progresión (minutos, aciertos/fallas e influencia)
 - [x] Design the high-level architecture of the system with all components ([documentation](docs/architecture.md))
 - [ ] Implement transactional normalization/loading stages for all APF match facts
 - [ ] Implement the PostgreSQL outbox consumer and Redis rebuild command

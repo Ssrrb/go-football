@@ -51,6 +51,9 @@ erDiagram
     SCORING_MODEL ||--o{ PLAYER_EDITION_SCORE : aggregates
     GAMEWEEK ||--o{ TEAM_OF_WEEK : selects
     TEAM_OF_WEEK ||--|{ TEAM_OF_WEEK_PLAYER : contains
+    SEASON_AWARD_FORMULA ||--o{ SEASON_AWARD_SELECTION : calculates
+    EDITION ||--o{ SEASON_AWARD_SELECTION : awards
+    SEASON_AWARD_SELECTION ||--|{ SEASON_AWARD_CANDIDATE : ranks
 ```
 
 ## Data areas
@@ -134,9 +137,10 @@ Publishing a corrected run is atomic:
 6. write `leaderboard_outbox` rows in the same transaction.
 
 Only active, published formula versions may be exposed. Editing a formula after
-publication is forbidden; create the next version instead. The formula and Team
-of the Week selection policy are still product decisions, so the schema stores
-them as versioned JSON rather than prematurely fixing their shape.
+publication is forbidden; create the next version instead. Match scoring and
+Team of the Week policies remain versioned JSON so their future shape is not
+prematurely fixed. Season-award formulas use the same immutable approach and
+have a published v1 specification in [`../docs/season-awards.md`](../docs/season-awards.md).
 
 A canonical leaderboard query is:
 
@@ -173,7 +177,24 @@ The later Team of the Week specification must define:
 - handling of postponed matches and gameweeks not yet final;
 - whether one real club may supply an unlimited number of players.
 
-### 6. Authentication
+### 6. Season awards
+
+- `season_award_formula` stores one immutable JSON policy per award and version.
+  A partial unique index permits only one active version of each award code.
+- `season_award_selection` identifies the edition, formula, exact normalized
+  input hash, data cutoff, and publication version. A source correction creates
+  a new selection and supersedes the prior one.
+- `season_award_candidate` stores the deterministic ranking, 0–100 score in
+  millipoints, minutes, team shown at publication, and full component breakdown.
+
+Formula version and selection version are deliberately separate: changing a
+weight creates formula v2, while recalculating unchanged v1 after corrected match
+data creates selection v2. The six active v1 policies, eligibility thresholds,
+normalization, and tie-breakers are defined in
+[`../docs/season-awards.md`](../docs/season-awards.md) and seeded by migration
+`005_season_awards.sql`.
+
+### 7. Authentication
 
 `app_user`, `auth_identity`, and `user_session` are intentionally independent of
 `player`. Emails are unique case-insensitively; provider subjects are the stable

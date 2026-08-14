@@ -71,6 +71,7 @@ type server struct {
 }
 
 type seasonAward struct {
+	Model       string
 	Category    string
 	PlayerName  string
 	ClubName    string
@@ -78,19 +79,21 @@ type seasonAward struct {
 }
 
 type pageData struct {
-	Entries      []leaderboard.Entry
-	TopEntries   []leaderboard.Entry
-	SeasonAwards []seasonAward
-	Position     string
-	Configured   bool
-	RatingMode   bool
-	PageURL      string
-	RefreshURL   string
-	ActivePage   string
-	ErrorMessage string
-	UpdatedAt    time.Time
-	User         *auth.User
-	CSRFToken    string
+	Entries           []leaderboard.Entry
+	TopEntries        []leaderboard.Entry
+	SeasonAwards      []seasonAward
+	SeasonAwardModels []seasonAward
+	Position          string
+	Model             string
+	Configured        bool
+	RatingMode        bool
+	PageURL           string
+	RefreshURL        string
+	ActivePage        string
+	ErrorMessage      string
+	UpdatedAt         time.Time
+	User              *auth.User
+	CSRFToken         string
 }
 
 // New constructs the application HTTP handler.
@@ -98,7 +101,9 @@ func New(cfg Config) (http.Handler, error) {
 	if cfg.Logger == nil || cfg.Leaderboard == nil || cfg.Auth == nil {
 		return nil, fmt.Errorf("logger, leaderboard, and auth are required")
 	}
-	templates, err := template.ParseFS(files, "templates/*.html")
+	templates, err := template.New("").Funcs(template.FuncMap{
+		"clubLogoURL": clubLogoURL,
+	}).ParseFS(files, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("parse templates: %w", err)
 	}
@@ -119,9 +124,9 @@ func New(cfg Config) (http.Handler, error) {
 		cookieSecure: cfg.CookieSecure, templates: templates,
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.home)
-	mux.HandleFunc("GET /clasificacion", s.classification)
-	mux.HandleFunc("GET /metodologia", s.methodology)
+	mux.Handle("GET /{$}", s.requireAuth(http.HandlerFunc(s.home)))
+	mux.Handle("GET /clasificacion", s.requireAuth(http.HandlerFunc(s.classification)))
+	mux.Handle("GET /metodologia", s.requireAuth(http.HandlerFunc(s.methodology)))
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("GET /register", s.registerPage)
@@ -150,8 +155,13 @@ func (s *server) leaderboardPage(response http.ResponseWriter, request *http.Req
 		http.Error(response, "invalid position", http.StatusBadRequest)
 		return
 	}
+	model := request.URL.Query().Get("model")
+	if !validSeasonAwardModel(model) {
+		http.Error(response, "invalid model", http.StatusBadRequest)
+		return
+	}
 
-	data := s.load(request, position, pageURL)
+	data := s.load(request, position, model, pageURL)
 	data.ActivePage = activePage
 	data.User = s.currentUser(response, request)
 	data.CSRFToken = s.csrfToken(response, request)
@@ -172,19 +182,30 @@ func (s *server) methodology(response http.ResponseWriter, request *http.Request
 	s.render(response, request, http.StatusOK, "methodology", data)
 }
 
-func (s *server) load(request *http.Request, position, pageURL string) pageData {
-	refreshURL := pageURL
+func (s *server) load(request *http.Request, position, model, pageURL string) pageData {
+	query := url.Values{}
 	if position != "" {
-		refreshURL += "?position=" + url.QueryEscape(position)
+		query.Set("position", position)
 	}
+	if model != "" {
+		query.Set("model", model)
+	}
+	refreshURL := pageURL
+	if encoded := query.Encode(); encoded != "" {
+		refreshURL += "?" + encoded
+	}
+
+	models := seasonAwardModels()
 	data := pageData{
-		SeasonAwards: pendingSeasonAwards(),
-		Position:     position,
-		Configured:   s.editionID != "" && s.scoringModelID != "",
-		RatingMode:   s.scoringModelID == leaderboard.PlayerMatchRatingModelID,
-		PageURL:      pageURL,
-		RefreshURL:   refreshURL,
-		UpdatedAt:    time.Now().UTC(),
+		SeasonAwards:      filterSeasonAwards(models, model),
+		SeasonAwardModels: models,
+		Position:          position,
+		Model:             model,
+		Configured:        s.editionID != "" && s.scoringModelID != "",
+		RatingMode:        s.scoringModelID == leaderboard.PlayerMatchRatingModelID,
+		PageURL:           pageURL,
+		RefreshURL:        refreshURL,
+		UpdatedAt:         time.Now().UTC(),
 	}
 	if !data.Configured {
 		return data
@@ -204,17 +225,77 @@ func (s *server) load(request *http.Request, position, pageURL string) pageData 
 	return data
 }
 
-func pendingSeasonAwards() []seasonAward {
-	// TODO: Populate these winners with the six versioned season-award formulas
-	// tracked in TODO.md. Until then, the UI deliberately renders a pending state.
+func seasonAwardModels() []seasonAward {
+	// Winner fields stay empty until a published season-award selection is loaded.
 	return []seasonAward{
-		{Category: "Jugador de la temporada"},
-		{Category: "Defensa de la temporada"},
-		{Category: "Portero de la temporada"},
-		{Category: "Jugador joven de la temporada (Sub-23)"},
-		{Category: "Suplente más decisivo de la temporada"},
-		{Category: "Jugador con mayor progresión"},
+		{Model: "player-of-the-season", Category: "Jugador de la temporada"},
+		{Model: "defender-of-the-season", Category: "Defensa de la temporada"},
+		{Model: "goalkeeper-of-the-season", Category: "Portero de la temporada"},
+		{Model: "young-player-of-the-season", Category: "Jugador joven de la temporada (Sub-23)"},
+		{Model: "decisive-substitute", Category: "Suplente más decisivo de la temporada"},
+		{Model: "most-improved-player", Category: "Jugador con mayor progresión"},
 	}
+}
+
+func validSeasonAwardModel(model string) bool {
+	if model == "" {
+		return true
+	}
+	for _, award := range seasonAwardModels() {
+		if award.Model == model {
+			return true
+		}
+	}
+	return false
+}
+
+func filterSeasonAwards(awards []seasonAward, model string) []seasonAward {
+	if model == "" {
+		return awards
+	}
+	if award := findSeasonAward(awards, model); award != nil {
+		return []seasonAward{*award}
+	}
+	return nil
+}
+
+func findSeasonAward(awards []seasonAward, model string) *seasonAward {
+	for index := range awards {
+		if awards[index].Model == model {
+			return &awards[index]
+		}
+	}
+	return nil
+}
+
+func clubLogoURL(teamName string) string {
+	normalized := strings.ToLower(strings.TrimSpace(teamName))
+	normalized = strings.NewReplacer(
+		"á", "a", "é", "e", "í", "i", "ó", "o", "ú", "u", "ñ", "n",
+	).Replace(normalized)
+	normalized = strings.TrimPrefix(normalized, "club ")
+
+	filenames := map[string]string{
+		"2 de mayo":              "Escudo_Oficial_del_Club_2_de_Mayo_de_Paraguay.svg.png",
+		"cerro porteno":          "cerro-porteno.png",
+		"guarani":                "club-guarani.png",
+		"libertad":               "250px-Club_Libertad.png",
+		"nacional":               "Club_Nacional_de_Paraguay.png",
+		"nacional asuncion":      "Club_Nacional_de_Paraguay.png",
+		"nacional de paraguay":   "Club_Nacional_de_Paraguay.png",
+		"olimpia":                "Escudo_original_de_Olimpia.png",
+		"sportivo luqueno":       "EscudoLuque2022.png",
+		"sportivo san lorenzo":   "Escudo_Sportivo_San_Lorenzo.png",
+		"sportivo trinidense":    "Club_Sportivo_Trinidense.svg.png",
+		"recoleta":               "Recoleta_Football_Club_logo_Paraguay_official_crest.png",
+		"recoleta fc":            "Recoleta_Football_Club_logo_Paraguay_official_crest.png",
+		"recoleta football club": "Recoleta_Football_Club_logo_Paraguay_official_crest.png",
+		"sportivo ameliano":      "Sportivo_Ameliano_1936.png",
+	}
+	if filename := filenames[normalized]; filename != "" {
+		return "/public/clubs/" + filename
+	}
+	return ""
 }
 
 func (s *server) render(response http.ResponseWriter, request *http.Request, status int, name string, data any) {

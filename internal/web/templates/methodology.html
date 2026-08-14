@@ -20,11 +20,29 @@
       </header>
       <section class="grid method-grid">
         <article class="card method"><div class="kicker">Principio</div><h2>Fuente canónica</h2><p>La ETL extrae el feed oficial APF/Opta. Los UUID de origen se conservan y las respuestas materiales se registran como snapshots inmutables.</p></article>
-        <article class="card method"><div class="kicker">Principio</div><h2>Modelo predeterminado</h2><p><code>SCORING_MODEL_ID=default</code> ordena por el promedio de las calificaciones no nulas de cada jugador en la edición configurada.</p></article>
+        <article class="card method"><div class="kicker">Principio</div><h2>Modelo predeterminado</h2><p><code>SCORING_MODEL_ID=default</code> recalcula la clasificación con cada partido finalizado. Los ratings se ponderan por minutos y se corrigen por tamaño de muestra, evitando que una única aparición excepcional domine la tabla.</p></article>
         <article class="card method"><div class="kicker">Principio</div><h2>Modelos personalizados</h2><p>Un UUID selecciona puntuaciones publicadas y versionadas. Los puntos se almacenan como milipuntos enteros: 1250 representa 1,250.</p></article>
         <article class="card method"><div class="kicker">Principio</div><h2>Posiciones</h2><p>Los filtros admitidos son GK, DEF, MID y FWD. Un jugador sin posición resuelta aparece en la clasificación general, pero no en una posicional.</p></article>
         <article class="card method"><div class="kicker">Principio</div><h2>Empates</h2><p>Las puntuaciones iguales comparten <code>competition_rank</code>. <code>ordinal_rank</code> solo ofrece un orden estable y no es un desempate deportivo.</p></article>
         <article class="card method"><div class="kicker">Principio</div><h2>Lectura y recuperación</h2><p>El servicio consulta Redis para modelos personalizados y vuelve a PostgreSQL si la caché está vacía o no disponible.</p></article>
+      </section>
+      <section class="card method integrity">
+        <div class="kicker">Rating de la clasificación</div><h2>Más minutos, más evidencia</h2>
+        <p>Primero se obtiene la media de rating del jugador ponderada por minutos y la media, también ponderada por minutos, de toda la edición. Luego se aplica:</p>
+        <p><code>rating ajustado = (Σ(rating × minutos) + media_edición × 450) / (minutos + 450)</code></p>
+        <p>Los 450 minutos actúan como una muestra previa de cinco partidos completos. Con 90 minutos la actuación propia aporta 17% del resultado; con 450 aporta 50% y con 900 aporta 67%. El ajuste se recalcula al incorporar cada partido finalizado y nunca utiliza partidos en vivo, minutos nulos o ratings ausentes.</p>
+      </section>
+      <section class="card method integrity">
+        <div class="kicker">Premios de temporada · fórmulas v1 activas</div><h2>Seis categorías, una política reproducible</h2>
+        <p>Todos los componentes se normalizan por percentiles entre los candidatos elegibles, se ponderan en una escala de 0 a 100 y se conservan en milipuntos. Los datos ausentes no cuentan como cero y cada categoría tiene minutos mínimos y desempates deterministas.</p>
+        <ul>
+          <li><strong>Jugador y joven Sub-23:</strong> calidad, producción, influencia, consistencia y disponibilidad.</li>
+          <li><strong>Defensa:</strong> producción defensiva, eficacia en duelos, defensa colectiva, calidad, influencia y disciplina.</li>
+          <li><strong>Portero:</strong> goles evitados, atajadas, control del área, porterías a cero, distribución y errores.</li>
+          <li><strong>Suplente decisivo:</strong> goles según el estado del marcador, cambio de puntos, rendimiento, frecuencia y tamaño de muestra.</li>
+          <li><strong>Mayor progresión:</strong> compara el primer y último 35% de jornadas; pondera mejora de rating (30%), aciertos (20%), reducción de fallas (20%), influencia (20%) y minutos (10%). La fiabilidad depende de los minutos en ambas ventanas.</li>
+        </ul>
+        <p>Una corrección genera otra versión de selección. Cambiar pesos o reglas exige una nueva versión de fórmula; una versión publicada nunca se edita.</p>
       </section>
       <section class="card method integrity">
         <div class="kicker">Reglas de integridad</div><h2>Sin inferencias silenciosas</h2>

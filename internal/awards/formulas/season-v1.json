@@ -1,0 +1,364 @@
+{
+  "specification": "go-football/season-awards",
+  "catalog_version": 1,
+  "status": "active",
+  "normalization": {
+    "method": "percentile_rank",
+    "range": [
+      0,
+      1
+    ],
+    "cohort": "eligible players in the same edition and award",
+    "ties": "average_rank",
+    "outliers": "winsorize raw rates at cohort percentiles 0.05 and 0.95 before ranking",
+    "missing_data": "required metrics make the player ineligible; optional metric weights are redistributed proportionally only when the formula explicitly allows it",
+    "minimum_cohort_size": 10
+  },
+  "common_metrics": {
+    "availability": "minutes / sum(team regulation minutes in matches for which the player was registered)",
+    "consistency": "0.50 * share(rated matches with rating >= 7.0) + 0.50 * inverse_percentile(MAD(match ratings))",
+    "goal_contribution_share": "(goals + assists) / team goals while the player was registered",
+    "team_score_share": "sum(max(production_index * minutes/90, 0)) / sum(max(all team-player production_index * minutes/90, 0))",
+    "result_involvement": "minute-weighted team league points / minutes",
+    "influence": "0.40 * percentile(team_score_share) + 0.30 * percentile(goal_contribution_share) + 0.30 * percentile(result_involvement)",
+    "success_index": "weighted_mean(pass_accuracy:0.35, tackle_accuracy:0.20, dribble_accuracy:0.15, cross_accuracy:0.10, long_ball_accuracy:0.10, shot_accuracy:0.10); category minimum attempts are 50, 5, 5, 5, 10, 5 respectively and available weights are redistributed proportionally",
+    "error_index": "0.60 * percentile(1 - success_index) + 0.25 * percentile(dispossessed / touches) + 0.15 * percentile((fouls + 2*yellow_cards + 5*red_cards) / (minutes/90))",
+    "production_index": "per90(5*goals + 3*assists + 0.5*shots_on_target + 0.10*duels_won + 0.15*tackles_won + 0.10*interceptions + 0.05*clearances + 0.05*recoveries + 0.01*passes_completed - 0.20*dispossessed - 0.50*fouls_committed - yellow_cards - 3*red_cards); percentile is calculated within position before cohorts are merged"
+  },
+  "awards": [
+    {
+      "id": "10000000-0000-4000-8000-000000000001",
+      "code": "PLAYER_OF_SEASON",
+      "name": "Jugador de la temporada",
+      "version": 1,
+      "status": "active",
+      "eligibility": {
+        "edition_state": "finalized",
+        "minimum_minutes": "max(900, 0.50 * team_possible_minutes)",
+        "minimum_appearances": 10,
+        "required_rating_coverage": 0.7,
+        "resolved_position_required": true
+      },
+      "aggregation": "weighted_percentiles",
+      "components": [
+        {
+          "code": "quality",
+          "weight": 0.35,
+          "direction": "higher",
+          "metric": "minutes-weighted mean provider rating"
+        },
+        {
+          "code": "production",
+          "weight": 0.25,
+          "direction": "higher",
+          "metric": "common.production_index"
+        },
+        {
+          "code": "influence",
+          "weight": 0.2,
+          "direction": "higher",
+          "metric": "common.influence"
+        },
+        {
+          "code": "consistency",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "common.consistency"
+        },
+        {
+          "code": "availability",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "common.availability"
+        }
+      ],
+      "tie_breakers": [
+        "higher total minutes",
+        "higher mean provider rating",
+        "more appearances",
+        "player UUID ascending"
+      ]
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000002",
+      "code": "DEFENDER_OF_SEASON",
+      "name": "Defensa de la temporada",
+      "version": 1,
+      "status": "active",
+      "eligibility": {
+        "edition_state": "finalized",
+        "position": "DEF",
+        "minimum_minutes": "max(900, 0.50 * team_possible_minutes)",
+        "minimum_appearances": 10,
+        "required_rating_coverage": 0.6
+      },
+      "aggregation": "weighted_percentiles",
+      "components": [
+        {
+          "code": "defensive_output",
+          "weight": 0.3,
+          "direction": "higher",
+          "metric": "per90(tackles_won + interceptions + 0.5*clearances + 0.5*recoveries)"
+        },
+        {
+          "code": "duel_efficiency",
+          "weight": 0.2,
+          "direction": "higher",
+          "metric": "0.60*tackle_accuracy + 0.40*duel_win_rate; duel attempts come from raw_stats"
+        },
+        {
+          "code": "team_defence",
+          "weight": 0.15,
+          "direction": "higher",
+          "metric": "0.50*minute_weighted_clean_sheet_rate + 0.50*inverse(goals_conceded_while_on_pitch_per90)"
+        },
+        {
+          "code": "quality",
+          "weight": 0.15,
+          "direction": "higher",
+          "metric": "minutes-weighted mean provider rating"
+        },
+        {
+          "code": "influence",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "common.influence within DEF cohort"
+        },
+        {
+          "code": "discipline",
+          "weight": 0.1,
+          "direction": "lower",
+          "metric": "per90(fouls + 2*yellow_cards + 5*red_cards)"
+        }
+      ],
+      "tie_breakers": [
+        "lower goals conceded while on pitch per 90",
+        "higher total minutes",
+        "fewer red cards",
+        "player UUID ascending"
+      ]
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000003",
+      "code": "GOALKEEPER_OF_SEASON",
+      "name": "Portero de la temporada",
+      "version": 1,
+      "status": "active",
+      "eligibility": {
+        "edition_state": "finalized",
+        "position": "GK",
+        "minimum_minutes": "max(720, 0.40 * team_possible_minutes)",
+        "minimum_appearances": 8,
+        "minimum_shots_on_target_faced": 25
+      },
+      "aggregation": "weighted_percentiles",
+      "components": [
+        {
+          "code": "goals_prevented",
+          "weight": 0.3,
+          "direction": "higher",
+          "metric": "post_shot_xg_on_target_faced - goals_conceded; if unavailable use saves - cohort_expected_saves(shots_on_target_faced)"
+        },
+        {
+          "code": "save_percentage",
+          "weight": 0.25,
+          "direction": "higher",
+          "metric": "saves / shots_on_target_faced"
+        },
+        {
+          "code": "box_control",
+          "weight": 0.15,
+          "direction": "higher",
+          "metric": "saves_inside_box and successful claims per 90 from raw_stats"
+        },
+        {
+          "code": "clean_sheets",
+          "weight": 0.15,
+          "direction": "higher",
+          "metric": "minute-weighted clean-sheet rate"
+        },
+        {
+          "code": "distribution",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "0.60*pass_accuracy + 0.40*long_ball_accuracy"
+        },
+        {
+          "code": "discipline_errors",
+          "weight": 0.05,
+          "direction": "lower",
+          "metric": "errors leading to shot/goal plus card-weighted fouls per 90 from raw_stats/events"
+        }
+      ],
+      "tie_breakers": [
+        "more goals prevented",
+        "higher save percentage",
+        "higher total minutes",
+        "player UUID ascending"
+      ]
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000004",
+      "code": "YOUNG_PLAYER_OF_SEASON",
+      "name": "Jugador joven de la temporada (Sub-23)",
+      "version": 1,
+      "status": "active",
+      "eligibility": {
+        "edition_state": "finalized",
+        "age_rule": "age < 23 on edition.starts_on; date_of_birth is required",
+        "minimum_minutes": "max(540, 0.30 * team_possible_minutes)",
+        "minimum_appearances": 8,
+        "required_rating_coverage": 0.6,
+        "resolved_position_required": true
+      },
+      "aggregation": "weighted_percentiles",
+      "components": [
+        {
+          "code": "quality",
+          "weight": 0.35,
+          "direction": "higher",
+          "metric": "minutes-weighted mean provider rating"
+        },
+        {
+          "code": "production",
+          "weight": 0.25,
+          "direction": "higher",
+          "metric": "common.production_index"
+        },
+        {
+          "code": "influence",
+          "weight": 0.2,
+          "direction": "higher",
+          "metric": "common.influence"
+        },
+        {
+          "code": "consistency",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "common.consistency"
+        },
+        {
+          "code": "availability",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "common.availability"
+        }
+      ],
+      "tie_breakers": [
+        "younger age on edition start",
+        "higher total minutes",
+        "higher mean provider rating",
+        "player UUID ascending"
+      ]
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000005",
+      "code": "IMPACT_SUBSTITUTE_OF_SEASON",
+      "name": "Suplente más decisivo de la temporada",
+      "version": 1,
+      "status": "active",
+      "eligibility": {
+        "edition_state": "finalized",
+        "minimum_substitute_appearances": 5,
+        "minimum_substitute_minutes": 180,
+        "maximum_starter_share": 0.5,
+        "only_substitute_minutes_count": true
+      },
+      "aggregation": "weighted_percentiles",
+      "components": [
+        {
+          "code": "decisive_actions",
+          "weight": 0.35,
+          "direction": "higher",
+          "metric": "per90(4*winning_goals + 3*equalizing_goals + 2*other_goals + 1.5*assists); event score state defines decisive actions"
+        },
+        {
+          "code": "score_swing",
+          "weight": 0.25,
+          "direction": "higher",
+          "metric": "team league-points delta between substitution entry and final whistle, per substitute appearance"
+        },
+        {
+          "code": "performance",
+          "weight": 0.2,
+          "direction": "higher",
+          "metric": "common.production_index using substitute appearances only"
+        },
+        {
+          "code": "frequency",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "share of substitute appearances with a goal, assist, or positive points swing"
+        },
+        {
+          "code": "reliability",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "min(1, substitute_minutes / 540)"
+        }
+      ],
+      "tie_breakers": [
+        "more winning plus equalizing goals as substitute",
+        "more substitute assists",
+        "more substitute minutes",
+        "player UUID ascending"
+      ]
+    },
+    {
+      "id": "10000000-0000-4000-8000-000000000006",
+      "code": "MOST_IMPROVED_PLAYER",
+      "name": "Jugador con mayor progresión",
+      "version": 1,
+      "status": "active",
+      "eligibility": {
+        "edition_state": "finalized",
+        "windows": "with N finalized edition gameweeks and k=ceil(0.35*N), early = first k and late = last k ordered by number; require N >= 10 and non-overlapping windows; middle gameweeks are excluded",
+        "minimum_minutes_per_window": 270,
+        "minimum_appearances_per_window": 4,
+        "minimum_rating_coverage_per_window": 0.6,
+        "minimum_success_categories": 4
+      },
+      "aggregation": "weighted_percentile_deltas_centered",
+      "reliability": "min(1, sqrt(min(early_minutes, late_minutes) / 540))",
+      "components": [
+        {
+          "code": "quality_growth",
+          "weight": 0.3,
+          "direction": "higher",
+          "metric": "late minutes-weighted mean rating - early minutes-weighted mean rating"
+        },
+        {
+          "code": "success_growth",
+          "weight": 0.2,
+          "direction": "higher",
+          "metric": "late common.success_index - early common.success_index; each rate uses completed/attempted counts"
+        },
+        {
+          "code": "error_reduction",
+          "weight": 0.2,
+          "direction": "higher",
+          "metric": "early common.error_index - late common.error_index"
+        },
+        {
+          "code": "influence_growth",
+          "weight": 0.2,
+          "direction": "higher",
+          "metric": "late common.influence - early common.influence"
+        },
+        {
+          "code": "minutes_growth",
+          "weight": 0.1,
+          "direction": "higher",
+          "metric": "late minutes share - early minutes share"
+        }
+      ],
+      "final_formula": "score = 50 + 50 * reliability * sum(weight_i * (2 * percentile(delta_i) - 1)); clamp to [0,100]",
+      "tie_breakers": [
+        "higher influence growth",
+        "higher success growth",
+        "more late-window minutes",
+        "player UUID ascending"
+      ]
+    }
+  ]
+}
