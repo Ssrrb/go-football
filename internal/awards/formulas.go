@@ -60,10 +60,10 @@ type Component struct {
 	Metric    string  `json:"metric"`
 }
 
-// LoadCatalog loads and validates the active version-two catalog. A fresh value
-// is returned on every call so callers cannot mutate shared formula state.
+// LoadCatalog loads and validates the active version-three catalog. A fresh
+// value is returned on every call so callers cannot mutate shared formula state.
 func LoadCatalog() (Catalog, error) {
-	payload, err := formulaFiles.ReadFile("formulas/season-v2.json")
+	payload, err := formulaFiles.ReadFile("formulas/season-v3.json")
 	if err != nil {
 		return Catalog{}, fmt.Errorf("read season award formulas: %w", err)
 	}
@@ -123,7 +123,7 @@ func (f Formula) Score(components map[string]float64) (int64, error) {
 }
 
 func (c Catalog) validate() error {
-	if c.Specification != "go-football/season-awards" || c.CatalogVersion != 2 || c.Status != "active" {
+	if c.Specification != "go-football/season-awards" || c.CatalogVersion != 3 || c.Status != "active" {
 		return fmt.Errorf("unsupported season award catalog")
 	}
 	if len(c.Awards) != 6 {

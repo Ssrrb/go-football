@@ -10,7 +10,7 @@
   {{else if not .Entries}}
     <div class="card state">
       {{if .RatingMode}}
-        <h2>Todavía no hay calificaciones</h2><p>La tabla se actualizará automáticamente cuando se carguen partidos evaluados.</p>
+        <h2>Todavía no hay rendimiento calculable</h2><p>La tabla se actualizará cuando haya partidos finalizados y posiciones resueltas.</p>
       {{else}}
         <h2>Todavía no hay puntuaciones publicadas</h2><p>La tabla se actualizará automáticamente cuando se publique el modelo.</p>
       {{end}}
@@ -29,7 +29,7 @@
           {{if clubLogoURL .TeamName}}<img class="team-logo" src="{{clubLogoURL .TeamName}}" alt="Escudo de {{.TeamName}}">{{end}}
           <span>{{if .TeamName}}{{.TeamName}}{{else}}Equipo sin identificar{{end}}</span>
         </div>
-        <p>{{if .PositionCode}}{{.PositionCode}}{{else}}Sin posición{{end}} · {{.Points}} {{if $.RatingMode}}de rating ajustado · {{.Minutes}} min{{else}}puntos{{end}}</p>
+        <p>{{if .PositionCode}}{{.PositionCode}}{{else}}Sin posición{{end}} · {{.Points}} {{if $.RatingMode}}de rating propio · {{.Minutes}} min{{else}}puntos{{end}}</p>
       </article>
       {{end}}
     </div>
@@ -41,7 +41,7 @@
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th scope="col">Puesto</th><th scope="col">Jugador</th><th scope="col">Equipo</th><th scope="col">Posición</th>{{if .RatingMode}}<th scope="col" class="points">PJ eval.</th><th scope="col" class="points">Min</th><th scope="col" class="points">Confianza</th>{{end}}<th scope="col" class="points">{{if .RatingMode}}Rating ajustado{{else}}Puntos{{end}}</th></tr></thead>
+          <thead><tr><th scope="col">Puesto</th><th scope="col">Jugador</th><th scope="col">Equipo</th><th scope="col">Posición</th>{{if .RatingMode}}<th scope="col" class="points">PJ eval.</th><th scope="col" class="points">Min</th><th scope="col" class="points">Confianza</th>{{end}}<th scope="col" class="points">{{if .RatingMode}}Rating propio{{else}}Puntos{{end}}</th></tr></thead>
           <tbody>
             {{range .Entries}}
             <tr>

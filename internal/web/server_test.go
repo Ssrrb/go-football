@@ -55,7 +55,7 @@ func (authStub) RevokeSession(context.Context, string) error { return nil }
 func (authStub) SessionDuration() time.Duration              { return 24 * time.Hour }
 
 func (leaderboardStub) List(context.Context, leaderboard.Query) ([]leaderboard.Entry, error) {
-	return []leaderboard.Entry{{CompetitionRank: 1, PlayerName: "Ada Striker", TeamName: "Club Cerro Porteño", PositionCode: "FWD", Appearances: 10, Minutes: 900, PointsMilli: 1250}}, nil
+	return []leaderboard.Entry{{CompetitionRank: 1, PlayerName: "Ada Striker", TeamName: "Club Cerro Porteño", PositionCode: "FWD", Appearances: 10, Minutes: 900, PointsMilli: 51_250}}, nil
 }
 
 func testHandler(t *testing.T) http.Handler {
@@ -255,22 +255,22 @@ func TestClassificationAndMethodologyPages(t *testing.T) {
 	}
 }
 
-func TestHomeLabelsDefaultModelAsPlayerRating(t *testing.T) {
+func TestHomeLabelsDefaultModelAsOwnPerformanceRating(t *testing.T) {
 	response := httptest.NewRecorder()
-	testHandlerWithScoringModel(t, leaderboard.PlayerMatchRatingModelID).ServeHTTP(
+	testHandlerWithScoringModel(t, leaderboard.BasePerformanceModelID).ServeHTTP(
 		response,
 		authenticatedRequest(http.MethodGet, "/", nil),
 	)
 
 	body := response.Body.String()
-	if response.Code != http.StatusOK || !strings.Contains(body, `class="points">Rating ajustado</th>`) {
-		t.Fatalf("expected adjusted rating leaderboard: %d %s", response.Code, body)
+	if response.Code != http.StatusOK || !strings.Contains(body, `class="points">Rating propio</th>`) {
+		t.Fatalf("expected own-performance rating leaderboard: %d %s", response.Code, body)
 	}
-	if !strings.Contains(body, `class="points">Confianza</th>`) || !strings.Contains(body, `class="points">67%</td>`) {
+	if !strings.Contains(body, `class="points">Confianza</th>`) || !strings.Contains(body, `class="points">50%</td>`) {
 		t.Fatal("expected sample confidence column")
 	}
-	if !strings.Contains(body, "Ratings are averaged across rated matches") {
-		t.Fatal("expected rating explanation")
+	if !strings.Contains(body, "The default rating uses normalized match statistics, positional weights, and minutes reliability") {
+		t.Fatal("expected provider-independent rating explanation")
 	}
 }
 

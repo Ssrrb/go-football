@@ -54,7 +54,7 @@
             <p>Consulta el ranking general o filtra por arquero, defensor, mediocampista y delantero. Se muestran hasta 50 jugadores.</p>
           {{end}}
         </div>
-        <span class="pill model">{{if .RatingMode}}Rating ajustado por minutos{{else}}Modelo publicado{{end}}</span>
+        <span class="pill model">{{if .RatingMode}}Rating propio por posición{{else}}Modelo publicado{{end}}</span>
       </header>
 
       {{if eq .ActivePage "overview"}}
@@ -96,8 +96,8 @@
       {{template "leaderboard" .}}
 
       <section class="card method-summary">
-        <div><div class="kicker">Modelo activo</div><h2>{{if .RatingMode}}Rating ajustado por minutos{{else}}Puntuación publicada{{end}}</h2></div>
-        <p>{{if .RatingMode}}El modo default usa solo partidos finalizados, pondera cada rating por los minutos y lo ajusta hacia la media de la edición con una muestra previa de 450 minutos. Esa corrección pierde peso a medida que el jugador acumula tiempo.<span class="sr-only" lang="en"> Ratings are averaged across rated matches, weighted by minutes, and adjusted for sample size.</span>{{else}}Los puntos corresponden a la versión publicada del modelo de puntuación configurado.{{end}} Los valores ausentes nunca se convierten en cero.</p>
+        <div><div class="kicker">Modelo activo</div><h2>{{if .RatingMode}}Rating propio por posición{{else}}Puntuación publicada{{end}}</h2></div>
+        <p>{{if .RatingMode}}El modo default no usa el rating de SofaScore. Normaliza ataque, progresión, defensa, control e influencia dentro de cada posición, aplica pesos específicos y reduce muestras pequeñas con <code>R = minutos/(minutos+900)</code>.<span class="sr-only" lang="en">The default rating uses normalized match statistics, positional weights, and minutes reliability.</span>{{else}}Los puntos corresponden a la versión publicada del modelo de puntuación configurado.{{end}} Los valores ausentes nunca se convierten en cero.</p>
         <a class="btn" href="/metodologia">Leer metodología</a>
       </section>
     </div>

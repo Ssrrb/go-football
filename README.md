@@ -40,10 +40,10 @@ Open <http://localhost:8080>. `make run` watches Go files, templates, CSS, and
 JavaScript and automatically rebuilds and restarts the service after a change;
 refresh the browser without restarting the terminal. Set `EDITION_ID` in `.env`.
 The default `SCORING_MODEL_ID=default` recalculates the ranking from finished
-matches in the edition. It weights each non-null `player_match_stat.rating` by
-minutes and shrinks small samples toward the edition mean with a 450-minute
-prior, so one short appearance cannot dominate sustained performance. Set it to
-a `scoring_model` UUID
+matches without using a provider-published rating. It robustly normalizes five
+statistical dimensions within each position, applies position-specific weights,
+and reduces small-sample inflation with `minutes/(minutes+900)`. Set it to a
+`scoring_model` UUID
 after publishing custom scores instead. Local registration and password login
 work without any third-party credentials. To run everything in containers with
 the same live-reload behavior:
@@ -60,17 +60,17 @@ the next file change.
 PostgreSQL bootstrap migrations run only when its Docker volume is first
 created. Use `docker compose down -v` to intentionally recreate a local database.
 For an existing database, apply each outstanding migration once in numeric order.
-For example, to add the normalized SofaScore player rating and the six active
-season-award formula versions:
+For example, to apply the season-award formula history and activate the
+provider-independent v3 formulas:
 
 ```bash
-psql "$DATABASE_URL" -f data/db/migrations/004_player_match_rating.sql
 psql "$DATABASE_URL" -f data/db/migrations/005_season_awards.sql
 psql "$DATABASE_URL" -f data/db/migrations/006_season_awards_v2.sql
+psql "$DATABASE_URL" -f data/db/migrations/007_provider_independent_ratings.sql
 ```
 
-The award migrations retain immutable v1 formulas and activate the final v2
-robust-Z formulas while preserving auditable, versioned selections. See
+The migrations retain immutable v1/v2 formulas and activate v3 while preserving
+auditable, versioned selections. See
 [`docs/season-awards.md`](docs/season-awards.md) for
 weights, eligibility, progression windows, and tie-breakers.
 

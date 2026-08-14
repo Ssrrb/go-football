@@ -4,15 +4,16 @@ package leaderboard
 import (
 	"context"
 	"fmt"
+
+	"github.com/Ssrrb/go-football/internal/performance"
 )
 
 const (
-	defaultLimit       = 50
-	ratingPriorMinutes = 450
+	defaultLimit = 50
 
-	// PlayerMatchRatingModelID selects an edition leaderboard based on the
-	// provider-published player_match_stat rating instead of a scoring model.
-	PlayerMatchRatingModelID = "default"
+	// BasePerformanceModelID selects the provider-independent positional
+	// performance algorithm instead of a pre-published scoring model.
+	BasePerformanceModelID = "default"
 )
 
 // Entry is one ranked football player.
@@ -39,13 +40,14 @@ func (e Entry) Points() string {
 	return fmt.Sprintf("%s%d.%03d", sign, value/1000, value%1000)
 }
 
-// SampleConfidence reports how much of the adjusted rating comes from the
-// player's own minutes; the remainder comes from the edition baseline.
+// SampleConfidence reports the base algorithm's minutes reliability. At 900
+// minutes the player's normalized performance contributes 50% of its eventual
+// full-reliability value.
 func (e Entry) SampleConfidence() string {
 	if e.Minutes <= 0 {
 		return "0%"
 	}
-	confidence := 100 * float64(e.Minutes) / float64(e.Minutes+ratingPriorMinutes)
+	confidence := 100 * float64(e.Minutes) / (float64(e.Minutes) + performance.ReliabilityPriorMinutes)
 	return fmt.Sprintf("%.0f%%", confidence)
 }
 
@@ -57,9 +59,10 @@ type Query struct {
 	Limit          int
 }
 
-// UsesMatchRatings reports whether the query selects provider match ratings.
-func (q Query) UsesMatchRatings() bool {
-	return q.ScoringModelID == PlayerMatchRatingModelID
+// UsesBasePerformance reports whether the query selects the built-in,
+// provider-independent positional performance algorithm.
+func (q Query) UsesBasePerformance() bool {
+	return q.ScoringModelID == BasePerformanceModelID
 }
 
 // Repository reads the authoritative PostgreSQL projection.
@@ -108,9 +111,9 @@ func (s *Service) List(ctx context.Context, query Query) ([]Entry, error) {
 	if query.Limit <= 0 || query.Limit > 100 {
 		query.Limit = defaultLimit
 	}
-	// The default rating leaderboard is computed directly from normalized match
+	// The default leaderboard is computed directly from normalized match
 	// statistics and does not have a Redis scoring-model projection.
-	if s.cache != nil && !query.UsesMatchRatings() {
+	if s.cache != nil && !query.UsesBasePerformance() {
 		cached, err := s.cache.Top(ctx, query)
 		if err == nil && len(cached) > 0 {
 			players, resolveErr := s.repository.FindPlayers(ctx, query, playerIDs(cached))

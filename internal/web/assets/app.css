@@ -148,6 +148,51 @@ tbody tr:hover { background: var(--border-soft); }
 .state h2 { margin: 0 0 4px; font: 650 var(--text-xl)/1.15 var(--font-display); letter-spacing: -.03em; }
 .state p { max-width: 55ch; margin: 4px 0 0; color: var(--muted); }
 .state.error h2 { color: var(--danger); }
+.method-answer, .method-intro, .method-rating, .method-awards { margin-bottom: 16px; padding: 28px; }
+.method-answer { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, .55fr); align-items: center; gap: 28px; border: 1px solid #b9dbff; background: linear-gradient(120deg, #f5faff, #fff); box-shadow: none; }
+.method-answer h2, .method-intro h2, .method-rating h2, .method-awards h2 { margin: 6px 0 0; font: 650 var(--text-xl)/1.12 var(--font-display); letter-spacing: -.04em; }
+.method-answer p { max-width: 62ch; margin: 10px 0 0; color: var(--fg-2); font-size: var(--text-base); }
+.method-verdict { display: grid; gap: 5px; padding: 16px; border-radius: var(--radius-sm); background: var(--accent); color: #fff; }
+.method-verdict strong { font-size: 13px; }
+.method-verdict span { font-size: 12px; line-height: 1.4; opacity: .9; }
+.method-intro > div:first-child { margin-bottom: 18px; }
+.method-compare, .method-difference, .award-rules { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.method-compare article, .award-rules article { padding: 15px; border-radius: var(--radius-sm); background: #fafafa; }
+.method-compare h3, .method-difference h3, .method-example h3, .method-sample h3, .award-rules h3 { margin: 0; font: 650 15px/1.25 var(--font-display); letter-spacing: -.02em; }
+.method-compare p, .award-rules p { margin: 7px 0 0; color: var(--fg-2); font-size: 13px; }
+.method-rating > .method-lead, .method-awards > .method-lead { max-width: 70ch; margin: 10px 0 20px; color: var(--fg-2); font-size: var(--text-base); }
+.method-difference { margin-bottom: 14px; }
+.method-difference article { min-height: 174px; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.method-wrong { background: #fff8f8; }
+.method-right { border-color: #b9dbff !important; background: #f5faff; }
+.method-label { display: inline-block; margin-bottom: 16px; color: var(--muted); font: 550 10px/1 var(--font-mono); letter-spacing: .06em; text-transform: uppercase; }
+.method-right .method-label { color: var(--accent); }
+.method-difference p { margin: 8px 0 14px; color: var(--fg-2); font-size: 13px; }
+.method-difference code { font-size: 12px; }
+.method-example { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .8fr); align-items: center; gap: 20px; padding: 18px; border-radius: var(--radius-sm); background: #171717; color: #fff; }
+.method-example .kicker { color: #b7b7b7; }
+.method-example p { margin: 7px 0 0; color: #d6d6d6; font-size: 13px; }
+.example-values { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.example-values p { display: grid; gap: 3px; margin: 0; padding: 12px; border-radius: var(--radius-sm); background: #292929; }
+.example-values span, .example-values small { color: #b7b7b7; font-size: 11px; }
+.example-values strong { font: 650 28px/1 var(--font-display); letter-spacing: -.04em; }
+.example-note { margin: 10px 0 22px; color: var(--fg-2); font-size: 13px; }
+.method-sample { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, .9fr); align-items: center; gap: 22px; padding: 20px 0; border-top: 1px solid var(--border); }
+.method-sample p { max-width: 61ch; margin: 7px 0 0; color: var(--fg-2); font-size: 13px; }
+.method-formula { display: grid; gap: 8px; padding: 14px; border-radius: var(--radius-sm); background: var(--accent-soft); }
+.method-formula strong { font-size: 13px; }
+.method-formula code { overflow-wrap: anywhere; font-size: 12px; }
+.method-caption { margin: 10px 0 18px; color: var(--muted); font-size: 12px; }
+.method-table { min-width: 0; margin: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); font-variant-numeric: tabular-nums; }
+.method-table th, .method-table td { padding: 10px 12px; }
+.method-table td:not(:first-child), .method-table th:not(:first-child) { text-align: right; }
+.method-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 22px 0 0; padding: 0; list-style: none; }
+.method-steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 9px; padding: 14px; border-radius: var(--radius-sm); background: #fafafa; }
+.method-steps li > span { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 50%; background: var(--fg); color: #fff; font: 650 11px/1 var(--font-mono); }
+.method-steps strong { font-size: 13px; }
+.method-steps p { margin: 4px 0 0; color: var(--fg-2); font-size: 12px; }
+.method-steps.compact { margin-top: 20px; }
+.award-rules { margin-top: 16px; }
 .method-summary { display: grid; grid-template-columns: minmax(220px, .7fr) minmax(300px, 1.3fr) auto; align-items: center; gap: 24px; margin-top: 24px; padding: 22px; }
 .method-summary h2 { margin: 3px 0 0; font: 650 var(--text-xl)/1.1 var(--font-display); letter-spacing: -.04em; }
 .method-summary p { margin: 0; color: var(--fg-2); font-size: 13px; }
@@ -212,14 +257,20 @@ tbody tr:hover { background: var(--border-soft); }
   .podium { grid-template-columns: 1fr; }
   .pod { min-height: 120px; }
   .pod h3 { margin-top: 18px; }
-  .method-grid, .method-summary { grid-template-columns: 1fr; }
+  .method-answer, .method-example, .method-sample, .method-grid, .method-summary { grid-template-columns: 1fr; }
+  .method-answer, .method-intro, .method-rating, .method-awards { padding: 20px; }
+  .method-compare, .method-difference, .award-rules, .method-steps { grid-template-columns: 1fr; }
+  .method-difference article { min-height: 0; }
+  .method-example { gap: 16px; }
   .method-summary p { grid-column: auto; grid-row: auto; }
   .method-summary .btn { justify-self: start; }
 }
 
 @media (max-width: 430px) {
   .brand small { display: none; }
-  .award-grid, .filters { grid-template-columns: 1fr; }
+  .award-grid, .filters, .example-values { grid-template-columns: 1fr; }
+  .method-table { font-size: 12px; }
+  .method-table th, .method-table td { padding: 9px 7px; }
   .filters .field:first-child, .filters .btn { grid-column: auto; }
   .section-head, .table-toolbar { align-items: flex-start; flex-direction: column; }
   .auth-shell { padding-top: 36px; }

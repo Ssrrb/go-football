@@ -92,10 +92,11 @@ bucket. The recommended resolution order is:
 4. unresolved (`NULL`).
 
 A tied minutes result uses the previous resolved position, then a manual review;
-it must not be guessed from a player name or shirt number. Unresolved players
-appear in the overall leaderboard but not a position-filtered one or Team of the
-Week until resolved. Match and gameweek scores retain the position used at the
-time of calculation, making old selections explainable.
+it must not be guessed from a player name or shirt number. The
+provider-independent default algorithm requires a resolved position, so
+unresolved players remain outside both the overall and position-filtered
+leaderboard until resolved. Match and gameweek scores retain the position used
+at the time of calculation, making old selections explainable.
 
 ### 3. Match facts
 
@@ -103,9 +104,9 @@ time of calculation, making old selections explainable.
 - `match_lineup`: one player per match, with team, starter/substitute, captain,
   shirt number, formation place, and resolved position.
 - `match_event`: ordered goals, cards, substitutions, and other events.
-- `player_match_stat`: the stable canonical statistic subset, including the
-  nullable provider-published decimal `rating`, plus all provider fields in
-  `raw_stats`.
+- `player_match_stat`: the stable canonical statistic subset plus all provider
+  fields in `raw_stats`. A nullable provider-published `rating` may be retained
+  for provenance, but the default v3 rating and awards never use it.
 - `team_match_stat`: complete raw team metrics.
 
 The normalized tables are the latest projection. Apply one snapshot in a single
@@ -140,7 +141,7 @@ Only active, published formula versions may be exposed. Editing a formula after
 publication is forbidden; create the next version instead. Match scoring and
 Team of the Week policies remain versioned JSON so their future shape is not
 prematurely fixed. Season-award formulas use the same immutable approach and
-have a published v2 specification in [`../docs/season-awards.md`](../docs/season-awards.md).
+have a published v3 specification in [`../docs/season-awards.md`](../docs/season-awards.md).
 
 A canonical leaderboard query is:
 
@@ -189,10 +190,10 @@ The later Team of the Week specification must define:
 
 Formula version and selection version are deliberately separate: changing a
 weight creates a new formula version, while recalculating an unchanged formula
-after corrected match data creates a new selection version. The six active v2
-policies, normalization, and tie-breakers are defined in
-[`../docs/season-awards.md`](../docs/season-awards.md), with the history seeded by
-migrations `005_season_awards.sql` and `006_season_awards_v2.sql`.
+after corrected match data creates a new selection version. The six active v3 policies, base algorithm, normalization, and tie-breakers are
+defined in [`../docs/season-awards.md`](../docs/season-awards.md), with immutable
+history seeded by migrations `005_season_awards.sql`,
+`006_season_awards_v2.sql`, and `007_provider_independent_ratings.sql`.
 
 ### 7. Authentication
 

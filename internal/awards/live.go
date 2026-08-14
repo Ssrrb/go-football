@@ -3,6 +3,8 @@ package awards
 import (
 	"context"
 	"fmt"
+
+	"github.com/Ssrrb/go-football/internal/performance"
 )
 
 // liveCandidates calculates provisional rankings directly from finished-match
@@ -23,7 +25,7 @@ facts AS (
            gameweeks.number AS gameweek_number,
            CASE WHEN gameweeks.number <= edition_data.half_cutoff THEN 1 ELSE 2 END AS season_half,
            profiles.primary_position AS position_code, players.date_of_birth,
-           COALESCE(stats.minutes, 0)::numeric AS minutes, stats.rating,
+           COALESCE(stats.minutes, 0)::numeric AS minutes,
            COALESCE(stats.goals, 0)::numeric AS goals,
            COALESCE(stats.assists, 0)::numeric AS assists,
            COALESCE(stats.shots, 0)::numeric AS shots,
@@ -38,8 +40,10 @@ facts AS (
            COALESCE(stats.tackles_won, 0)::numeric AS tackles_won,
            COALESCE(stats.tackles_attempted, 0)::numeric AS tackles_attempted,
            COALESCE(stats.interceptions, 0)::numeric AS interceptions,
+           COALESCE(stats.clearances, 0)::numeric AS clearances,
            COALESCE(stats.recoveries, 0)::numeric AS recoveries,
            COALESCE(stats.fouls_committed, 0)::numeric AS fouls,
+           COALESCE(stats.fouls_suffered, 0)::numeric AS fouls_suffered,
            COALESCE(stats.yellow_cards, 0)::numeric AS yellow_cards,
            COALESCE(stats.red_cards, 0)::numeric AS red_cards,
            COALESCE(stats.dribbles_completed, 0)::numeric AS dribbles_completed,
@@ -54,7 +58,6 @@ facts AS (
            COALESCE((stats.raw_stats ->> 'totalProgression')::numeric, 0) AS progression,
            COALESCE((stats.raw_stats ->> 'progressiveBallCarriesCount')::numeric, 0) AS progressive_carries,
            COALESCE((stats.raw_stats ->> 'keyPass')::numeric, 0) AS key_passes,
-           COALESCE((stats.raw_stats ->> 'defensiveValueNormalized')::numeric, 0) AS defensive_value,
            COALESCE((stats.raw_stats ->> 'outfielderBlock')::numeric, 0) AS blocks,
            COALESCE((stats.raw_stats ->> 'errorLeadToAShot')::numeric, 0)
              + 2*COALESCE((stats.raw_stats ->> 'errorLeadToAGoal')::numeric, 0) AS errors,
@@ -88,22 +91,22 @@ aggregates AS (
            max(date_of_birth) AS date_of_birth,
            count(*)::bigint AS appearances,
            sum(minutes) AS minutes,
-           sum(rating * minutes) FILTER (WHERE rating IS NOT NULL) AS rating_sum,
-           sum(minutes) FILTER (WHERE rating IS NOT NULL) AS rated_minutes,
            sum(goals) AS goals, sum(assists) AS assists, sum(shots) AS shots,
            sum(shots_on_target) AS shots_on_target,
            sum(passes_completed) AS passes_completed, sum(passes_attempted) AS passes_attempted,
            sum(touches) AS touches, sum(duels_won) AS duels_won, sum(duels_lost) AS duels_lost,
            sum(aerial_won) AS aerial_won, sum(aerial_lost) AS aerial_lost,
            sum(tackles_won) AS tackles_won, sum(tackles_attempted) AS tackles_attempted,
-           sum(interceptions) AS interceptions, sum(recoveries) AS recoveries,
-           sum(fouls) AS fouls, sum(yellow_cards) AS yellow_cards, sum(red_cards) AS red_cards,
+           sum(interceptions) AS interceptions, sum(clearances) AS clearances,
+           sum(recoveries) AS recoveries, sum(fouls) AS fouls,
+           sum(fouls_suffered) AS fouls_suffered,
+           sum(yellow_cards) AS yellow_cards, sum(red_cards) AS red_cards,
            sum(dribbles_completed) AS dribbles_completed, sum(dribbles_attempted) AS dribbles_attempted,
            sum(crosses_completed) AS crosses_completed, sum(crosses_attempted) AS crosses_attempted,
            sum(long_balls_completed) AS long_balls_completed, sum(long_balls_attempted) AS long_balls_attempted,
            sum(dispossessed) AS dispossessed, sum(possession_lost) AS possession_lost,
-           sum(progression + progressive_carries + key_passes) AS progression,
-           sum(defensive_value) AS defensive_value, sum(blocks) AS blocks, sum(errors) AS errors,
+           sum(progression + progressive_carries + 2*key_passes) AS progression,
+           sum(key_passes) AS key_passes, sum(blocks) AS blocks, sum(errors) AS errors,
            sum(saves) AS saves, sum(goals_conceded) AS goals_conceded,
            sum(cross_control) AS cross_control,
            sum(sweeper_won) AS sweeper_won, sum(sweeper_attempted) AS sweeper_attempted
@@ -119,7 +122,7 @@ position_priors AS (
            sum(aerial_won)/NULLIF(sum(aerial_won+aerial_lost), 0) AS aerial_rate,
            sum(saves)/NULLIF(sum(saves+goals_conceded), 0) AS save_rate,
            sum(sweeper_won)/NULLIF(sum(sweeper_attempted), 0) AS sweeper_rate,
-           sum(rating_sum)/NULLIF(sum(rated_minutes), 0) AS rating_mean
+           sum(dribbles_completed)/NULLIF(sum(dribbles_attempted), 0) AS dribble_rate
     FROM aggregates
     GROUP BY position_code
 ),
@@ -127,10 +130,13 @@ full_metrics AS (
     SELECT aggregates.*,
            90*(5*goals+3*assists+0.5*shots_on_target)/NULLIF(minutes,0) AS attack_metric,
            90*progression/NULLIF(minutes,0) AS progression_metric,
-           90*defensive_value/NULLIF(minutes,0) AS defence_metric,
-           (passes_completed+50*COALESCE(position_priors.pass_rate,0.5))/NULLIF(passes_attempted+50,0)
-             - 0.25*possession_lost/NULLIF(touches,0) AS control_metric,
-           (rating_sum+180*COALESCE(position_priors.rating_mean,6.5))/NULLIF(rated_minutes+180,0) AS influence_metric,
+           90*(1.5*tackles_won+1.5*interceptions+0.75*blocks+0.5*recoveries
+             +0.5*clearances+0.2*duels_won-errors)/NULLIF(minutes,0) AS defence_metric,
+           0.50*(passes_completed+50*COALESCE(position_priors.pass_rate,0.5))/NULLIF(passes_attempted+50,0)
+             +0.25*(duels_won+20*COALESCE(position_priors.duel_rate,0.5))/NULLIF(duels_won+duels_lost+20,0)
+             +0.25*(dribbles_completed+10*COALESCE(position_priors.dribble_rate,0.5))/NULLIF(dribbles_attempted+10,0)
+             -0.25*possession_lost/NULLIF(touches,0) AS control_metric,
+           90*(touches+4*key_passes+2*shots+2*fouls_suffered)/NULLIF(minutes,0) AS influence_metric,
            (duels_won+20*COALESCE(position_priors.duel_rate,0.5))/NULLIF(duels_won+duels_lost+20,0) AS duel_rate,
            (aerial_won+15*COALESCE(position_priors.aerial_rate,0.5))/NULLIF(aerial_won+aerial_lost+15,0) AS aerial_rate,
            90*interceptions/NULLIF(minutes,0) AS interceptions_per90,
@@ -226,13 +232,17 @@ sub_aggregates AS (
            (array_agg(team_id ORDER BY kickoff_at DESC))[1] AS team_id,
            max(position_code) AS position_code,
            count(*)::bigint AS sub_apps, sum(minutes) AS minutes,
-           sum(rating*minutes) FILTER (WHERE rating IS NOT NULL) AS rating_sum,
-           sum(minutes) FILTER (WHERE rating IS NOT NULL) AS rated_minutes,
-           sum(goals) AS goals, sum(assists) AS assists, sum(shots_on_target) AS shots_on_target,
+           sum(goals) AS goals, sum(assists) AS assists, sum(shots) AS shots,
+           sum(shots_on_target) AS shots_on_target,
            sum(passes_completed) AS passes_completed, sum(passes_attempted) AS passes_attempted,
-           sum(touches) AS touches, sum(possession_lost) AS possession_lost,
-           sum(progression+progressive_carries+key_passes) AS progression,
-           sum(defensive_value) AS defensive_value
+           sum(touches) AS touches, sum(duels_won) AS duels_won, sum(duels_lost) AS duels_lost,
+           sum(dribbles_completed) AS dribbles_completed, sum(dribbles_attempted) AS dribbles_attempted,
+           sum(tackles_won) AS tackles_won, sum(interceptions) AS interceptions,
+           sum(clearances) AS clearances, sum(recoveries) AS recoveries,
+           sum(blocks) AS blocks, sum(errors) AS errors,
+           sum(fouls_suffered) AS fouls_suffered, sum(possession_lost) AS possession_lost,
+           sum(progression+progressive_carries+2*key_passes) AS progression,
+           sum(key_passes) AS key_passes
     FROM facts
     WHERE substitute AND position_code IS NOT NULL
     GROUP BY player_id
@@ -240,17 +250,21 @@ sub_aggregates AS (
 sub_priors AS (
     SELECT position_code,
            sum(passes_completed)/NULLIF(sum(passes_attempted),0) AS pass_rate,
-           sum(rating_sum)/NULLIF(sum(rated_minutes),0) AS rating_mean
+           sum(duels_won)/NULLIF(sum(duels_won+duels_lost),0) AS duel_rate,
+           sum(dribbles_completed)/NULLIF(sum(dribbles_attempted),0) AS dribble_rate
     FROM sub_aggregates GROUP BY position_code
 ),
 sub_metrics AS (
     SELECT sub_aggregates.*,
            90*(5*goals+3*assists+0.5*shots_on_target)/NULLIF(minutes,0) AS attack_metric,
            90*progression/NULLIF(minutes,0) AS progression_metric,
-           90*defensive_value/NULLIF(minutes,0) AS defence_metric,
-           (passes_completed+30*COALESCE(sub_priors.pass_rate,0.5))/NULLIF(passes_attempted+30,0)
-             - 0.25*possession_lost/NULLIF(touches,0) AS control_metric,
-           (rating_sum+90*COALESCE(sub_priors.rating_mean,6.5))/NULLIF(rated_minutes+90,0) AS influence_metric,
+           90*(1.5*tackles_won+1.5*interceptions+0.75*blocks+0.5*recoveries
+             +0.5*clearances+0.2*duels_won-errors)/NULLIF(minutes,0) AS defence_metric,
+           0.50*(passes_completed+30*COALESCE(sub_priors.pass_rate,0.5))/NULLIF(passes_attempted+30,0)
+             +0.25*(duels_won+15*COALESCE(sub_priors.duel_rate,0.5))/NULLIF(duels_won+duels_lost+15,0)
+             +0.25*(dribbles_completed+8*COALESCE(sub_priors.dribble_rate,0.5))/NULLIF(dribbles_attempted+8,0)
+             -0.25*possession_lost/NULLIF(touches,0) AS control_metric,
+           90*(touches+4*key_passes+2*shots+2*fouls_suffered)/NULLIF(minutes,0) AS influence_metric,
            COALESCE(impacts.impact,0) AS impact
     FROM sub_aggregates JOIN sub_priors USING(position_code)
     LEFT JOIN (SELECT player_id,sum(action_impact) AS impact FROM sub_impact_actions GROUP BY player_id) impacts USING(player_id)
@@ -258,34 +272,40 @@ sub_metrics AS (
 period_aggregates AS (
     SELECT player_id, season_half, max(position_code) AS position_code,
            sum(minutes) AS minutes,
-           sum(rating*minutes) FILTER (WHERE rating IS NOT NULL) AS rating_sum,
-           sum(minutes) FILTER (WHERE rating IS NOT NULL) AS rated_minutes,
            sum(goals) AS goals, sum(assists) AS assists, sum(shots) AS shots,
            sum(shots_on_target) AS shots_on_target,
            sum(passes_completed) AS passes_completed, sum(passes_attempted) AS passes_attempted,
            sum(touches) AS touches, sum(possession_lost) AS possession_lost,
+           sum(duels_won) AS duels_won, sum(duels_lost) AS duels_lost,
            sum(tackles_won) AS tackles_won, sum(tackles_attempted) AS tackles_attempted,
+           sum(interceptions) AS interceptions, sum(clearances) AS clearances,
+           sum(recoveries) AS recoveries, sum(blocks) AS blocks,
+           sum(fouls_suffered) AS fouls_suffered,
            sum(dribbles_completed) AS dribbles_completed, sum(dribbles_attempted) AS dribbles_attempted,
            sum(crosses_completed) AS crosses_completed, sum(crosses_attempted) AS crosses_attempted,
            sum(long_balls_completed) AS long_balls_completed, sum(long_balls_attempted) AS long_balls_attempted,
-           sum(progression+progressive_carries+key_passes) AS progression,
-           sum(defensive_value) AS defensive_value, sum(errors) AS errors
+           sum(progression+progressive_carries+2*key_passes) AS progression,
+           sum(key_passes) AS key_passes, sum(errors) AS errors
     FROM facts WHERE position_code IS NOT NULL GROUP BY player_id,season_half
 ),
 period_priors AS (
     SELECT season_half,position_code,
            sum(passes_completed)/NULLIF(sum(passes_attempted),0) AS pass_rate,
-           sum(rating_sum)/NULLIF(sum(rated_minutes),0) AS rating_mean
+           sum(duels_won)/NULLIF(sum(duels_won+duels_lost),0) AS duel_rate,
+           sum(dribbles_completed)/NULLIF(sum(dribbles_attempted),0) AS dribble_rate
     FROM period_aggregates GROUP BY season_half,position_code
 ),
 period_metrics AS (
     SELECT period_aggregates.*,
            90*(5*goals+3*assists+0.5*shots_on_target)/NULLIF(minutes,0) AS attack_metric,
            90*progression/NULLIF(minutes,0) AS progression_metric,
-           90*defensive_value/NULLIF(minutes,0) AS defence_metric,
-           (passes_completed+50*COALESCE(period_priors.pass_rate,0.5))/NULLIF(passes_attempted+50,0)
-             - 0.25*possession_lost/NULLIF(touches,0) AS control_metric,
-           (rating_sum+180*COALESCE(period_priors.rating_mean,6.5))/NULLIF(rated_minutes+180,0) AS influence_metric,
+           90*(1.5*tackles_won+1.5*interceptions+0.75*blocks+0.5*recoveries
+             +0.5*clearances+0.2*duels_won-errors)/NULLIF(minutes,0) AS defence_metric,
+           0.50*(passes_completed+50*COALESCE(period_priors.pass_rate,0.5))/NULLIF(passes_attempted+50,0)
+             +0.25*(duels_won+20*COALESCE(period_priors.duel_rate,0.5))/NULLIF(duels_won+duels_lost+20,0)
+             +0.25*(dribbles_completed+10*COALESCE(period_priors.dribble_rate,0.5))/NULLIF(dribbles_attempted+10,0)
+             -0.25*possession_lost/NULLIF(touches,0) AS control_metric,
+           90*(touches+4*key_passes+2*shots+2*fouls_suffered)/NULLIF(minutes,0) AS influence_metric,
            90*(passes_completed+tackles_won+dribbles_completed+crosses_completed+long_balls_completed+shots_on_target)/NULLIF(minutes,0) AS success_metric,
            90*((passes_attempted-passes_completed)+(tackles_attempted-tackles_won)
              +(dribbles_attempted-dribbles_completed)+(crosses_attempted-crosses_completed)
@@ -294,8 +314,10 @@ period_metrics AS (
     FROM period_aggregates JOIN period_priors USING(season_half,position_code)
 ),
 position_weights(position_code,a,p,d,c,i) AS (
-    VALUES ('GK'::text,.05::numeric,.10::numeric,.10::numeric,.30::numeric,.45::numeric),
-           ('DEF',.10,.20,.35,.20,.15), ('MID',.15,.30,.15,.20,.20), ('FWD',.35,.20,.05,.15,.25)
+    VALUES ('GK'::text,$5::numeric,$6::numeric,$7::numeric,$8::numeric,$9::numeric),
+           ('DEF',$10::numeric,$11::numeric,$12::numeric,$13::numeric,$14::numeric),
+           ('MID',$15::numeric,$16::numeric,$17::numeric,$18::numeric,$19::numeric),
+           ('FWD',$20::numeric,$21::numeric,$22::numeric,$23::numeric,$24::numeric)
 ),
 standard_inputs AS (
     SELECT 'quality'::text AS family, position_code AS cohort, player_id, metric, value
@@ -361,12 +383,12 @@ defence_scores AS (
 ),
 goalkeeper_scores AS (
     SELECT standardized.player_id,
-           .40*max(z) FILTER(WHERE metric='shot_stop')
-             * full_metrics.shots_faced/(full_metrics.shots_faced+100)
-           +.20*max(z) FILTER(WHERE metric='distribution')
-           +.15*max(z) FILTER(WHERE metric='cross_control')
-           +.10*max(z) FILTER(WHERE metric='sweeping')
-           +.10*max(z) FILTER(WHERE metric='error_avoidance') AS performance
+           max(z) FILTER(WHERE metric='shot_stop')
+             * full_metrics.shots_faced/(full_metrics.shots_faced+100) AS shot_stop,
+           max(z) FILTER(WHERE metric='distribution') AS distribution,
+           max(z) FILTER(WHERE metric='cross_control') AS cross_control,
+           max(z) FILTER(WHERE metric='sweeping') AS sweeping,
+           max(z) FILTER(WHERE metric='error_avoidance') AS error_avoidance
     FROM standardized JOIN full_metrics USING(player_id)
     WHERE family='goalkeeper' GROUP BY standardized.player_id,full_metrics.shots_faced
 ),
@@ -391,7 +413,7 @@ period_scores AS (
 ),
 progress_deltas AS (
     SELECT old.player_id,old.position_code,new.minutes AS new_minutes,
-           new.q*new.minutes/(new.minutes+900)-old.q*old.minutes/(old.minutes+900) AS delta_q,
+           new.q*new.minutes/(new.minutes+$4::numeric)-old.q*old.minutes/(old.minutes+$4::numeric) AS delta_q,
            new.efficiency-old.efficiency AS delta_efficiency,
            new.influence-old.influence AS delta_influence,
            ln((new.minutes+90)/(old.minutes+90)) AS role_growth
@@ -416,22 +438,29 @@ progress_scores AS (
 ),
 raw_category_scores AS (
     SELECT 'PLAYER_OF_SEASON'::text AS award_code,metrics.player_id,metrics.team_id,metrics.minutes,
-           .80*quality.q*metrics.minutes/(metrics.minutes+900)
-             +.20*sqrt(metrics.minutes/max(metrics.minutes) OVER()) AS raw_score
+           $25::numeric*quality.q*metrics.minutes/(metrics.minutes+$4::numeric)
+             +$26::numeric*sqrt(metrics.minutes/max(metrics.minutes) OVER()) AS raw_score
     FROM full_metrics metrics JOIN quality_scores quality USING(player_id)
     UNION ALL
     SELECT 'DEFENDER_OF_SEASON',metrics.player_id,metrics.team_id,metrics.minutes,
-           .85*defence.def*metrics.minutes/(metrics.minutes+900)
+           .35*quality.q*metrics.minutes/(metrics.minutes+$4::numeric)
+             +.50*defence.def*metrics.minutes/(metrics.minutes+$4::numeric)
              +.15*sqrt(metrics.minutes/max(metrics.minutes) OVER())
-    FROM full_metrics metrics JOIN defence_scores defence USING(player_id) WHERE metrics.position_code='DEF'
+    FROM full_metrics metrics JOIN quality_scores quality USING(player_id)
+    JOIN defence_scores defence USING(player_id) WHERE metrics.position_code='DEF'
     UNION ALL
     SELECT 'GOALKEEPER_OF_SEASON',metrics.player_id,metrics.team_id,metrics.minutes,
-           goalkeepers.performance+.05*sqrt(metrics.minutes/max(metrics.minutes) OVER())
-    FROM full_metrics metrics JOIN goalkeeper_scores goalkeepers USING(player_id) WHERE metrics.position_code='GK'
+           .25*quality.q*metrics.minutes/(metrics.minutes+$4::numeric)
+             +.35*goalkeepers.shot_stop+.15*goalkeepers.distribution
+             +.075*goalkeepers.cross_control+.075*goalkeepers.sweeping
+             +.05*goalkeepers.error_avoidance
+             +.05*sqrt(metrics.minutes/max(metrics.minutes) OVER())
+    FROM full_metrics metrics JOIN quality_scores quality USING(player_id)
+    JOIN goalkeeper_scores goalkeepers USING(player_id) WHERE metrics.position_code='GK'
     UNION ALL
     SELECT 'YOUNG_PLAYER_OF_SEASON',metrics.player_id,metrics.team_id,metrics.minutes,
-           .80*quality.q*metrics.minutes/(metrics.minutes+900)
-             +.20*sqrt(metrics.minutes/(SELECT max(minutes) FROM full_metrics))
+           $25::numeric*quality.q*metrics.minutes/(metrics.minutes+$4::numeric)
+             +$26::numeric*sqrt(metrics.minutes/(SELECT max(minutes) FROM full_metrics))
     FROM full_metrics metrics JOIN quality_scores quality USING(player_id) CROSS JOIN edition_data
     WHERE metrics.date_of_birth>edition_data.starts_on-INTERVAL '23 years'
     UNION ALL
@@ -461,7 +490,16 @@ LEFT JOIN team teams ON teams.id=ranked.team_id
 WHERE ranked.candidate_rank<=$3
 ORDER BY ranked.award_code,ranked.candidate_rank`
 
-	rows, err := r.pool.Query(ctx, statement, editionID, awardCodes, limit)
+	gk, def := performance.PositionWeights["GK"], performance.PositionWeights["DEF"]
+	mid, fwd := performance.PositionWeights["MID"], performance.PositionWeights["FWD"]
+	rows, err := r.pool.Query(
+		ctx, statement, editionID, awardCodes, limit, performance.ReliabilityPriorMinutes,
+		gk.Attack, gk.Progression, gk.Defence, gk.Control, gk.Influence,
+		def.Attack, def.Progression, def.Defence, def.Control, def.Influence,
+		mid.Attack, mid.Progression, mid.Defence, mid.Control, mid.Influence,
+		fwd.Attack, fwd.Progression, fwd.Defence, fwd.Control, fwd.Influence,
+		performance.QualityWeight, performance.VolumeWeight,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("query live season award candidates: %w", err)
 	}

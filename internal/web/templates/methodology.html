@@ -15,39 +15,60 @@
     <div class="ticker"><span class="pill live"><span class="status-dot"></span>Datos trazables</span><span class="ticker-item"><strong>Fuente:</strong> feed oficial de la APF.</span></div>
     <div class="content">
       <header class="page-header">
-        <div><div class="kicker">Metodología · trazabilidad</div><h1>Datos verificables, rankings reproducibles.</h1><p>Go Football conserva la fuente, las correcciones y las versiones de puntuación. PostgreSQL es autoritativo y Redis es una proyección reconstruible.</p></div>
-        <span class="pill model">Contexto del proyecto</span>
+        <div><div class="kicker">Metodología · algoritmo v3</div><h1>Rendimiento propio, comparable y fiable.</h1><p>La clasificación y los premios se calculan desde estadísticas de partido. El rating publicado por el proveedor no participa.</p></div>
+        <span class="pill model">Solo partidos finalizados</span>
       </header>
+
+      <section class="card method-answer" aria-labelledby="answer-title">
+        <div><div class="kicker">La idea clave</div><h2 id="answer-title">Primero creamos una base justa para cada posición.</h2><p>Los conteos se convierten a tasas por 90 y los porcentajes se moderan por cantidad de intentos. Después cada métrica se normaliza entre jugadores de la misma posición.</p></div>
+        <div class="method-verdict"><strong>Sin SofaScore rating</strong><span>Solo acciones observables, minutos y posición.</span></div>
+      </section>
+
+      <section class="card method-rating" aria-labelledby="rating-title">
+        <div class="kicker">Rating base</div>
+        <h2 id="rating-title">Cinco dimensiones con pesos por posición</h2>
+        <p class="method-lead">Ataque, progresión, defensa, control e influencia se transforman en Z-scores robustos dentro de GK, DEF, MID o FWD. Así una entrada no se compara directamente con un gol y un defensor no se evalúa como delantero.</p>
+        <div class="method-difference">
+          <article class="method-right"><span class="method-label">Normalización robusta</span><h3>Menos sensible a valores extremos</h3><code>Zr(x) = (x − mediana_posición) / (1,4826 × MAD_posición)</code><p>Si no hay MAD se usa el Z-score convencional; sin dispersión, el resultado es cero.</p></article>
+          <article><span class="method-label">Calidad posicional</span><h3>La función cambia por rol</h3><code>Q = wA×Ataque + wP×Progresión + wD×Defensa + wC×Control + wI×Influencia</code><p>DEF da 35% a defensa; MID da 30% a progresión; FWD da 35% a ataque. GK prioriza control e influencia de portería.</p></article>
+        </div>
+
+        <table class="method-table" aria-label="Pesos del rating por posición">
+          <thead><tr><th>Posición</th><th>Ataque</th><th>Progresión</th><th>Defensa</th><th>Control</th><th>Influencia</th></tr></thead>
+          <tbody><tr><td>GK</td><td>5%</td><td>10%</td><td>10%</td><td>30%</td><td>45%</td></tr><tr><td>DEF</td><td>10%</td><td>20%</td><td>35%</td><td>20%</td><td>15%</td></tr><tr><td>MID</td><td>15%</td><td>30%</td><td>15%</td><td>20%</td><td>20%</td></tr><tr><td>FWD</td><td>35%</td><td>20%</td><td>5%</td><td>15%</td><td>25%</td></tr></tbody>
+        </table>
+
+        <div class="method-sample" aria-labelledby="sample-title">
+          <div><div class="kicker">Protección de muestra</div><h3 id="sample-title">Los minutos controlan la fiabilidad</h3><p>Una actuación corta puede ser excelente sin tener evidencia suficiente para dominar la tabla. La calidad normalizada se reduce al principio y converge gradualmente a su valor completo.</p></div>
+          <div class="method-formula"><strong>Base fiable</strong><code>R = Min/(Min+900) · B = Q×R · Rating general = 0,85×B + 0,15×√(Min/Minmáx)</code></div>
+        </div>
+        <table class="method-table" aria-label="Fiabilidad por minutos">
+          <thead><tr><th>Minutos</th><th>Fiabilidad R</th></tr></thead>
+          <tbody><tr><td>90</td><td>9%</td></tr><tr><td>450</td><td>33%</td></tr><tr><td>900</td><td>50%</td></tr><tr><td>1.800</td><td>67%</td></tr></tbody>
+        </table>
+        <p class="method-caption">El score estandarizado sin límite decide el orden. La escala pública <code>100/(1+exp(−score))</code> solo facilita la lectura y no cambia puestos.</p>
+      </section>
+
+      <section class="card method-awards" aria-labelledby="awards-title">
+        <div class="kicker">Premios de temporada · fórmulas v3</div>
+        <h2 id="awards-title">Cada premio parte de la misma base y añade su especialidad</h2>
+        <div class="award-rules">
+          <article><h3>Jugador y Sub-23</h3><p><code>85% B + 15% volumen</code>. El Sub-23 usa exactamente el mismo rendimiento, sin bono por edad.</p></article>
+          <article><h3>Defensa</h3><p><code>35% B + 50% defensa especializada fiable + 15% volumen</code>: duelos, entradas, intercepciones, bloqueos, recuperaciones y errores.</p></article>
+          <article><h3>Portero</h3><p><code>25% B</code> más atajadas ajustadas por remates enfrentados, distribución, centros, salidas, errores evitados y volumen.</p></article>
+          <article><h3>Suplente decisivo</h3><p><code>25% base de suplente</code>, 55% impacto de goles/asistencias según el marcador y 20% volumen de apariciones.</p></article>
+          <article><h3>Mayor progresión</h3><p>Compara la primera mitad con la segunda: 45% crecimiento de base y 55% repartido entre eficiencia, influencia y crecimiento de rol.</p></article>
+        </div>
+        <p class="method-caption">Una selección oficial publicada reemplaza la proyección en vivo. Cambiar métricas o pesos exige una nueva versión inmutable de fórmula.</p>
+      </section>
+
       <section class="grid method-grid">
-        <article class="card method"><div class="kicker">Principio</div><h2>Fuente canónica</h2><p>La ETL extrae el feed oficial APF/Opta. Los UUID de origen se conservan y las respuestas materiales se registran como snapshots inmutables.</p></article>
-        <article class="card method"><div class="kicker">Principio</div><h2>Modelo predeterminado</h2><p><code>SCORING_MODEL_ID=default</code> recalcula la clasificación con cada partido finalizado. Los ratings se ponderan por minutos y se corrigen por tamaño de muestra, evitando que una única aparición excepcional domine la tabla.</p></article>
-        <article class="card method"><div class="kicker">Principio</div><h2>Modelos personalizados</h2><p>Un UUID selecciona puntuaciones publicadas y versionadas. Los puntos se almacenan como milipuntos enteros: 1250 representa 1,250.</p></article>
-        <article class="card method"><div class="kicker">Principio</div><h2>Posiciones</h2><p>Los filtros admitidos son GK, DEF, MID y FWD. Un jugador sin posición resuelta aparece en la clasificación general, pero no en una posicional.</p></article>
-        <article class="card method"><div class="kicker">Principio</div><h2>Empates</h2><p>Las puntuaciones iguales comparten <code>competition_rank</code>. <code>ordinal_rank</code> solo ofrece un orden estable y no es un desempate deportivo.</p></article>
-        <article class="card method"><div class="kicker">Principio</div><h2>Lectura y recuperación</h2><p>El servicio consulta Redis para modelos personalizados y vuelve a PostgreSQL si la caché está vacía o no disponible.</p></article>
-      </section>
-      <section class="card method integrity">
-        <div class="kicker">Rating de la clasificación</div><h2>Más minutos, más evidencia</h2>
-        <p>Primero se obtiene la media de rating del jugador ponderada por minutos y la media, también ponderada por minutos, de toda la edición. Luego se aplica:</p>
-        <p><code>rating ajustado = (Σ(rating × minutos) + media_edición × 450) / (minutos + 450)</code></p>
-        <p>Los 450 minutos actúan como una muestra previa de cinco partidos completos. Con 90 minutos la actuación propia aporta 17% del resultado; con 450 aporta 50% y con 900 aporta 67%. El ajuste se recalcula al incorporar cada partido finalizado y nunca utiliza partidos en vivo, minutos nulos o ratings ausentes.</p>
-      </section>
-      <section class="card method integrity">
-        <div class="kicker">Premios de temporada · fórmulas v2 activas</div><h2>Seis categorías, una política reproducible</h2>
-        <p>Cada estadística se convierte primero en un Z-score robusto dentro de la posición. Los porcentajes se ajustan por cantidad de intentos y los minutos aportan fiabilidad mediante <code>R = Min/(Min+900)</code>; así, la jornada 4 de 22 sigue siendo comparable sin tratar una muestra corta como definitiva.</p>
-        <ul>
-          <li><strong>Jugador y joven Sub-23:</strong> 80% calidad posicional ajustada por fiabilidad y 20% volumen. El Sub-23 usa la misma fórmula, sin bono de edad.</li>
-          <li><strong>Defensa:</strong> duelos, juego aéreo, intercepciones, entradas, bloqueos, recuperaciones y progresión, menos errores; 85% rendimiento fiable y 15% volumen.</li>
-          <li><strong>Portero:</strong> 40% atajadas ajustadas por remates enfrentados, más distribución, centros, salidas, errores evitados y volumen.</li>
-          <li><strong>Suplente decisivo:</strong> solo acciones posteriores a entrar; combina 55% impacto ponderado por estado del marcador, 25% calidad y 20% entradas desde el banco.</li>
-          <li><strong>Mayor progresión:</strong> compara estrictamente jornadas 1–11 contra 12–22. Pondera Δ calidad (45%), Δ eficiencia (20%), Δ influencia (20%) y crecimiento de rol estandarizado (15%). No aparece durante la primera mitad.</li>
-        </ul>
-        <p>Mientras la edición está en curso, las tarjetas muestran una <strong>proyección en vivo</strong> separada del premio oficial. Se recalcula desde partidos finalizados cada 15 segundos. La escala visual 0–100 es una transformación monótona del score estandarizado y no altera el orden. Al publicarse una selección oficial, esta reemplaza automáticamente la proyección.</p>
-        <p>Una corrección genera otra versión de selección. Cambiar pesos o reglas exige una nueva versión de fórmula; una versión publicada nunca se edita.</p>
+        <article class="card method"><div class="kicker">Intentos</div><h2>Un 100% no siempre vale igual</h2><p>Pases, duelos, regates, balones largos, atajadas y salidas se contraen hacia la tasa de su posición con una muestra previa antes de normalizarse.</p></article>
+        <article class="card method"><div class="kicker">Trazabilidad</div><h2>Implementación revisable</h2><p>El algoritmo ejecutable está en <code>internal/performance</code>, el catálogo inmutable en <code>internal/awards/formulas/season-v3.json</code> y la especificación detallada en <code>docs/season-awards.md</code>.</p></article>
       </section>
       <section class="card method integrity">
         <div class="kicker">Reglas de integridad</div><h2>Sin inferencias silenciosas</h2>
-        <ul><li>Un dato ausente permanece <code>NULL</code>; no equivale a cero.</li><li>Jugadores, equipos y partidos se vinculan por identificadores, nunca por nombres visibles.</li><li>Redis puede reconstruirse por completo desde PostgreSQL.</li><li>La interfaz no promete una latencia que la fuente no garantiza.</li></ul>
+        <ul><li>Un dato ausente no equivale automáticamente a cero.</li><li>Solo se usan partidos finalizados y jugadores con posición resuelta.</li><li>Los filtros no cambian la cohorte usada para normalizar.</li><li>Una fórmula publicada nunca se edita: se publica otra versión.</li></ul>
       </section>
     </div>
   </main>

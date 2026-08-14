@@ -50,17 +50,17 @@ func TestServiceFallsBackWhenCacheFails(t *testing.T) {
 	}
 }
 
-func TestServiceBypassesCacheForDefaultMatchRatings(t *testing.T) {
-	fallback := []Entry{{PlayerID: "rated-player", PointsMilli: 7350}}
+func TestServiceBypassesCacheForDefaultBasePerformance(t *testing.T) {
+	fallback := []Entry{{PlayerID: "base-player", PointsMilli: 7350}}
 	cache := &cacheStub{entries: []CachedEntry{{PlayerID: "stale-player"}}}
 	service := NewService(repositoryStub{entries: fallback}, cache)
 
-	entries, err := service.List(context.Background(), Query{ScoringModelID: PlayerMatchRatingModelID})
-	if err != nil || len(entries) != 1 || entries[0].PlayerID != "rated-player" {
-		t.Fatalf("expected PostgreSQL ratings, got %#v, %v", entries, err)
+	entries, err := service.List(context.Background(), Query{ScoringModelID: BasePerformanceModelID})
+	if err != nil || len(entries) != 1 || entries[0].PlayerID != "base-player" {
+		t.Fatalf("expected PostgreSQL base performance, got %#v, %v", entries, err)
 	}
 	if cache.calls != 0 {
-		t.Fatalf("expected rating query to bypass Redis, got %d calls", cache.calls)
+		t.Fatalf("expected base-performance query to bypass Redis, got %d calls", cache.calls)
 	}
 }
 
@@ -79,14 +79,15 @@ func TestPointsFormatsMillipointsExactly(t *testing.T) {
 	}
 }
 
-func TestSampleConfidenceGrowsWithMinutes(t *testing.T) {
+func TestSampleConfidenceGrowsWithMinutesReliability(t *testing.T) {
 	for minutes, expected := range map[int64]string{
-		0:   "0%",
-		90:  "17%",
-		450: "50%",
-		900: "67%",
+		0:    "0%",
+		90:   "9%",
+		900:  "50%",
+		1800: "67%",
 	} {
-		if actual := (Entry{Minutes: minutes}).SampleConfidence(); actual != expected {
+		entry := Entry{Minutes: minutes}
+		if actual := entry.SampleConfidence(); actual != expected {
 			t.Errorf("SampleConfidence() for %d minutes = %q, want %q", minutes, actual, expected)
 		}
 	}

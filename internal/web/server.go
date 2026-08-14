@@ -231,7 +231,7 @@ func (s *server) load(request *http.Request, position, model, pageURL string, lo
 		Position:          position,
 		Model:             model,
 		Configured:        s.editionID != "" && s.scoringModelID != "",
-		RatingMode:        s.scoringModelID == leaderboard.PlayerMatchRatingModelID,
+		RatingMode:        s.scoringModelID == leaderboard.BasePerformanceModelID,
 		PageURL:           pageURL,
 		RefreshURL:        refreshURL,
 		AwardsRefreshURL:  seasonAwardsRefreshURL(model),
