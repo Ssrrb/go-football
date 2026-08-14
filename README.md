@@ -35,15 +35,23 @@ make test
 make run
 ```
 
-Open <http://localhost:8080>. Set `EDITION_ID` in `.env`. The default
-`SCORING_MODEL_ID=default` ranks players by their average non-null
+Open <http://localhost:8080>. `make run` watches Go files, templates, CSS, and
+JavaScript and automatically rebuilds and restarts the service after a change;
+refresh the browser without restarting the terminal. Set `EDITION_ID` in `.env`.
+The default `SCORING_MODEL_ID=default` ranks players by their average non-null
 `player_match_stat.rating` across that edition. Set it to a `scoring_model` UUID
 after publishing custom scores instead. Local registration and password login
-work without any third-party credentials. To run everything in containers:
+work without any third-party credentials. To run everything in containers with
+the same live-reload behavior:
 
 ```bash
 make dev
 ```
+
+The first run downloads the pinned [Air](https://github.com/air-verse/air)
+development watcher. Changes under `cmd/` and `internal/` are then picked up
+automatically. If a build fails, fix the reported error and Air will retry on
+the next file change.
 
 PostgreSQL bootstrap migrations run only when its Docker volume is first
 created. Use `docker compose down -v` to intentionally recreate a local database.

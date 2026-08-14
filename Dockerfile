@@ -1,4 +1,14 @@
 # syntax=docker/dockerfile:1
+FROM golang:1.23-alpine AS development
+WORKDIR /src
+RUN go install github.com/air-verse/air@v1.61.7
+COPY go.mod go.sum ./
+RUN go mod download
+COPY .air.toml ./
+COPY cmd ./cmd
+COPY internal ./internal
+CMD ["air", "-c", ".air.toml"]
+
 FROM golang:1.23-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./

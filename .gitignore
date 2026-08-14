@@ -5,6 +5,7 @@
 /web
 *.test
 coverage.out
+/tmp/
 
 # Python
 __pycache__/

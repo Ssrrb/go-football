@@ -32,7 +32,9 @@ services:
       retries: 10
 
   web:
-    build: .
+    build:
+      context: .
+      target: development
     environment:
       APP_ENV: development
       HTTP_ADDR: :8080
@@ -50,6 +52,9 @@ services:
       SENTRY_RELEASE: ${SENTRY_RELEASE:-}
     ports:
       - "8080:8080"
+    volumes:
+      - .:/src
+      - web-build:/src/tmp
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,3 +73,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  web-build:

@@ -1,8 +1,10 @@
+AIR_VERSION := v1.61.7
+
 .PHONY: help dev run infra-up infra-down test test-go test-etl fmt vet build etl-discover etl-load-sofascore
 
 help:
-	@printf '%s\n' 'make dev           Run the complete local stack' \
-		'make run           Run the Go service with .env' \
+	@printf '%s\n' 'make dev           Run the complete local stack with live reload' \
+		'make run           Run the Go service with .env and live reload' \
 		'make infra-up      Start PostgreSQL and Redis' \
 		'make test          Run Go and Python tests' \
 		'make etl-discover  Run APF discovery locally' \
@@ -12,7 +14,7 @@ dev:
 	docker compose up --build
 
 run:
-	@set -a; [ ! -f .env ] || . ./.env; set +a; go run ./cmd/web
+	@set -a; [ ! -f .env ] || . ./.env; set +a; go run github.com/air-verse/air@$(AIR_VERSION) -c .air.toml
 
 infra-up:
 	docker compose up -d postgres redis
