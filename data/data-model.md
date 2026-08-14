@@ -140,7 +140,7 @@ Only active, published formula versions may be exposed. Editing a formula after
 publication is forbidden; create the next version instead. Match scoring and
 Team of the Week policies remain versioned JSON so their future shape is not
 prematurely fixed. Season-award formulas use the same immutable approach and
-have a published v1 specification in [`../docs/season-awards.md`](../docs/season-awards.md).
+have a published v2 specification in [`../docs/season-awards.md`](../docs/season-awards.md).
 
 A canonical leaderboard query is:
 
@@ -188,11 +188,11 @@ The later Team of the Week specification must define:
   millipoints, minutes, team shown at publication, and full component breakdown.
 
 Formula version and selection version are deliberately separate: changing a
-weight creates formula v2, while recalculating unchanged v1 after corrected match
-data creates selection v2. The six active v1 policies, eligibility thresholds,
-normalization, and tie-breakers are defined in
-[`../docs/season-awards.md`](../docs/season-awards.md) and seeded by migration
-`005_season_awards.sql`.
+weight creates a new formula version, while recalculating an unchanged formula
+after corrected match data creates a new selection version. The six active v2
+policies, normalization, and tie-breakers are defined in
+[`../docs/season-awards.md`](../docs/season-awards.md), with the history seeded by
+migrations `005_season_awards.sql` and `006_season_awards_v2.sql`.
 
 ### 7. Authentication
 

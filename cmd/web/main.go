@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/Ssrrb/go-football/internal/auth"
+	"github.com/Ssrrb/go-football/internal/awards"
 	"github.com/Ssrrb/go-football/internal/config"
 	"github.com/Ssrrb/go-football/internal/leaderboard"
 	webapp "github.com/Ssrrb/go-football/internal/web"
@@ -80,6 +81,7 @@ func run(logger *slog.Logger) (runErr error) {
 	handler, err := webapp.New(webapp.Config{
 		Logger:         logger,
 		Leaderboard:    leaderboards,
+		SeasonAwards:   awards.NewRepository(pool),
 		EditionID:      cfg.EditionID,
 		ScoringModelID: cfg.ScoringModelID,
 		DatabaseCheck:  pool.Ping,

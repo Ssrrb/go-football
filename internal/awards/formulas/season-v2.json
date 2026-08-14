@@ -1,0 +1,123 @@
+{
+  "specification": "go-football/season-awards",
+  "catalog_version": 2,
+  "status": "active",
+  "normalization": {
+    "method": "positional_robust_z_score",
+    "formula": "(x - median(position, metric)) / (1.4826 * MAD(position, metric))",
+    "fallback": "use positional standard Z-score when MAD is zero; use 0 when the cohort has no dispersion",
+    "cohort": "players in the same edition, position and calculation window",
+    "rate_adjustment": "shrink rates toward the positional cohort rate with metric-specific pseudo-attempts before standardization",
+    "missing_data": "a required unavailable metric makes the player ineligible; zero is used only when the provider semantics establish that an omitted count means no actions"
+  },
+  "common_metrics": {
+    "reliability": "R = minutes / (minutes + 900)",
+    "season_volume": "V = sqrt(minutes / maximum player minutes in the edition cohort)",
+    "quality": "Q = w_A*A + w_P*P + w_D*D + w_C*C + w_I*I; A, P, D, C and I are positional robust Z-scores",
+    "position_weights": "GK=(.05,.10,.10,.30,.45); DEF=(.10,.20,.35,.20,.15); MID=(.15,.30,.15,.20,.20); FWD=(.35,.20,.05,.15,.25) for (A,P,D,C,I)",
+    "public_scale": "the raw standardized award score determines ranking; 100/(1+exp(-raw_score)) is used only to display it on a 0-100 scale"
+  },
+  "awards": [
+    {
+      "id": "20000000-0000-4000-8000-000000000001",
+      "code": "PLAYER_OF_SEASON",
+      "name": "Jugador de la temporada",
+      "version": 2,
+      "status": "active",
+      "eligibility": {
+        "resolved_position_required": true,
+        "provisional": "one finished appearance; reliability controls the round-four sample",
+        "final": "same calculation over all 22 rounds"
+      },
+      "aggregation": "weighted_standardized_components",
+      "components": [
+        {"code": "reliable_quality", "weight": 0.8, "direction": "higher", "metric": "Q * minutes/(minutes+900)"},
+        {"code": "season_volume", "weight": 0.2, "direction": "higher", "metric": "sqrt(minutes/maximum player minutes)"}
+      ],
+      "final_formula": "JTS = 0.80*(Q*R) + 0.20*V",
+      "tie_breakers": ["higher raw JTS", "higher total minutes", "player UUID ascending"]
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000002",
+      "code": "DEFENDER_OF_SEASON",
+      "name": "Defensa de la temporada",
+      "version": 2,
+      "status": "active",
+      "eligibility": {"position": "DEF", "provisional": "one finished appearance"},
+      "aggregation": "weighted_standardized_components",
+      "components": [
+        {"code": "reliable_defence", "weight": 0.85, "direction": "higher", "metric": "DEF * minutes/(minutes+900); DEF=.20*Z(duel win rate)+.15*Z(aerial win rate)+.20*Z(interceptions/90)+.15*Z(tackles/90)+.10*Z(blocks/90)+.10*Z(recoveries/90)+.10*Z(progression/90)-.10*Z(errors/90)"},
+        {"code": "season_volume", "weight": 0.15, "direction": "higher", "metric": "sqrt(minutes/maximum defender minutes)"}
+      ],
+      "final_formula": "DTS = 0.85*(DEF*R) + 0.15*V",
+      "tie_breakers": ["higher raw DTS", "higher total minutes", "player UUID ascending"]
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000003",
+      "code": "GOALKEEPER_OF_SEASON",
+      "name": "Portero de la temporada",
+      "version": 2,
+      "status": "active",
+      "eligibility": {"position": "GK", "minimum_shots_on_target_faced": 1},
+      "aggregation": "weighted_standardized_components",
+      "components": [
+        {"code": "reliable_shot_stopping", "weight": 0.4, "direction": "higher", "metric": "Z(save percentage adjusted for attempts) * SOTFaced/(SOTFaced+100); use Z((PSxG-GA)/SOTFaced) when PSxG is available"},
+        {"code": "distribution", "weight": 0.2, "direction": "higher", "metric": "Z(attempt-adjusted pass and long-ball accuracy)"},
+        {"code": "cross_control", "weight": 0.15, "direction": "higher", "metric": "Z((high claims+punches)/90)"},
+        {"code": "sweeping", "weight": 0.1, "direction": "higher", "metric": "Z(attempt-adjusted keeper-sweeper success rate)"},
+        {"code": "error_avoidance", "weight": 0.1, "direction": "higher", "metric": "Z(-errors leading to shots or goals per 90)"},
+        {"code": "season_volume", "weight": 0.05, "direction": "higher", "metric": "sqrt(minutes/maximum goalkeeper minutes)"}
+      ],
+      "final_formula": "PTS = .40*ShotStop* + .20*Distribution + .15*CrossControl + .10*Sweeping + .10*ErrorAvoidance + .05*V",
+      "tie_breakers": ["higher reliable shot stopping", "higher save percentage", "higher total minutes", "player UUID ascending"]
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000004",
+      "code": "YOUNG_PLAYER_OF_SEASON",
+      "name": "Jugador joven de la temporada (Sub-23)",
+      "version": 2,
+      "status": "active",
+      "eligibility": {"age_rule": "age < 23 on edition.starts_on; date_of_birth is required", "resolved_position_required": true},
+      "aggregation": "weighted_standardized_components",
+      "components": [
+        {"code": "reliable_quality", "weight": 0.8, "direction": "higher", "metric": "the same Q as PLAYER_OF_SEASON * minutes/(minutes+900)"},
+        {"code": "season_volume", "weight": 0.2, "direction": "higher", "metric": "sqrt(minutes/maximum player minutes), identical to PLAYER_OF_SEASON"}
+      ],
+      "final_formula": "JJTS = 0.80*(Q*R) + 0.20*V; age < 23; no age bonus",
+      "tie_breakers": ["higher raw JJTS", "higher total minutes", "player UUID ascending"]
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000005",
+      "code": "IMPACT_SUBSTITUTE_OF_SEASON",
+      "name": "Suplente más decisivo de la temporada",
+      "version": 2,
+      "status": "active",
+      "eligibility": {"minimum_substitute_appearances": 1, "only_statistics_after_entering_count": true},
+      "aggregation": "weighted_standardized_components",
+      "components": [
+        {"code": "reliable_impact", "weight": 0.55, "direction": "higher", "metric": "positional Z(sum(ActionValue*Leverage)) * substitute_minutes/(substitute_minutes+450)"},
+        {"code": "reliable_substitute_quality", "weight": 0.25, "direction": "higher", "metric": "positional Q_sub * substitute_minutes/(substitute_minutes+450)"},
+        {"code": "substitute_volume", "weight": 0.2, "direction": "higher", "metric": "sqrt(substitute appearances/maximum substitute appearances)"}
+      ],
+      "final_formula": "SMS = .55*Impact* + .25*Q_sub* + .20*V_sub",
+      "tie_breakers": ["higher raw SMS", "higher leverage-weighted impact", "more substitute appearances", "player UUID ascending"]
+    },
+    {
+      "id": "20000000-0000-4000-8000-000000000006",
+      "code": "MOST_IMPROVED_PLAYER",
+      "name": "Jugador con mayor progresión",
+      "version": 2,
+      "status": "active",
+      "eligibility": {"windows": "first half (rounds 1-11) versus second half (rounds 12-22); both windows require minutes", "total_rounds": 22},
+      "aggregation": "weighted_standardized_components",
+      "components": [
+        {"code": "quality_growth", "weight": 0.45, "direction": "higher", "metric": "Q_new*Min_new/(Min_new+900) - Q_old*Min_old/(Min_old+900)"},
+        {"code": "efficiency_growth", "weight": 0.2, "direction": "higher", "metric": "Efficiency_new-Efficiency_old; Efficiency=Z(success)-Z(failure)"},
+        {"code": "influence_growth", "weight": 0.2, "direction": "higher", "metric": "Influence_new-Influence_old"},
+        {"code": "role_growth", "weight": 0.15, "direction": "higher", "metric": "Z(ln((Min_new+90)/(Min_old+90)))"}
+      ],
+      "final_formula": "MPS = .45*DeltaQ + .20*DeltaEfficiency + .20*DeltaInfluence + .15*Z(RoleGrowth)",
+      "tie_breakers": ["higher raw MPS", "higher quality growth", "more second-half minutes", "player UUID ascending"]
+    }
+  ]
+}

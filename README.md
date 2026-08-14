@@ -66,10 +66,12 @@ season-award formula versions:
 ```bash
 psql "$DATABASE_URL" -f data/db/migrations/004_player_match_rating.sql
 psql "$DATABASE_URL" -f data/db/migrations/005_season_awards.sql
+psql "$DATABASE_URL" -f data/db/migrations/006_season_awards_v2.sql
 ```
 
-The award migration stores immutable v1 formulas and creates auditable,
-versioned selections. See [`docs/season-awards.md`](docs/season-awards.md) for
+The award migrations retain immutable v1 formulas and activate the final v2
+robust-Z formulas while preserving auditable, versioned selections. See
+[`docs/season-awards.md`](docs/season-awards.md) for
 weights, eligibility, progression windows, and tie-breakers.
 
 ## Authentication

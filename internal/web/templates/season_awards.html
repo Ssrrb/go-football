@@ -1,0 +1,38 @@
+{{define "season-awards"}}<section id="season-awards" class="grid award-grid" aria-label="Premios de la temporada" aria-live="polite"
+  hx-get="{{.AwardsRefreshURL}}" hx-trigger="every 15s" hx-swap="outerHTML">
+  {{range .SeasonAwards}}
+  <article class="card award">
+    <div class="award-heading">
+      <div class="kicker">Premio de temporada</div>
+      {{if .Candidates}}
+        {{if .Projected}}<span class="award-status projection">Proyección en vivo</span>{{else}}<span class="award-status published">Top 3 publicado</span>{{end}}
+      {{else}}
+        <span class="award-status">Resultados pendientes</span>
+      {{end}}
+    </div>
+    <h2>{{.Category}}</h2>
+    {{if .Candidates}}
+    <ol class="award-ranking" aria-label="Top 3 de {{.Category}}">
+      {{range .Candidates}}
+      <li class="award-player">
+        <span class="award-rank">{{.Rank}}</span>
+        {{if clubLogoURL .TeamName}}
+          <img class="award-club-icon" src="{{clubLogoURL .TeamName}}" alt="Escudo de {{.TeamName}}">
+        {{else}}
+          <span class="award-club-placeholder" aria-hidden="true">
+            <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2.5 20 5v6.1c0 5-3.3 8.5-8 10.4-4.7-1.9-8-5.4-8-10.4V5l8-2.5Z"/><path d="m8.7 11.8 2.1 2.1 4.7-5"/></svg>
+          </span>
+        {{end}}
+        <span class="award-player-info">
+          <strong>{{.PlayerName}}</strong>
+          <small>{{if .TeamName}}{{.TeamName}} · {{end}}{{.Score}} pts</small>
+        </span>
+      </li>
+      {{end}}
+    </ol>
+    {{else}}
+    <p class="award-empty">El top 3 aparecerá cuando haya suficientes partidos evaluados.</p>
+    {{end}}
+  </article>
+  {{end}}
+</section>{{end}}

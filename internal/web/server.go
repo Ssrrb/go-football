@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/Ssrrb/go-football/internal/auth"
+	"github.com/Ssrrb/go-football/internal/awards"
 	"github.com/Ssrrb/go-football/internal/leaderboard"
 )
 
@@ -23,6 +24,11 @@ var files embed.FS
 // Leaderboard lists current leaderboard entries.
 type Leaderboard interface {
 	List(context.Context, leaderboard.Query) ([]leaderboard.Entry, error)
+}
+
+// SeasonAwards lists the leading candidates in published award selections.
+type SeasonAwards interface {
+	TopCandidates(context.Context, string, []string, int) (map[string][]awards.Candidate, error)
 }
 
 // Authenticator is the authentication application service used by HTTP handlers.
@@ -48,6 +54,7 @@ type ErrorReporter func(context.Context, error)
 type Config struct {
 	Logger         *slog.Logger
 	Leaderboard    Leaderboard
+	SeasonAwards   SeasonAwards
 	EditionID      string
 	ScoringModelID string
 	DatabaseCheck  Check
@@ -60,6 +67,7 @@ type Config struct {
 type server struct {
 	logger         *slog.Logger
 	leaderboard    Leaderboard
+	seasonAwards   SeasonAwards
 	editionID      string
 	scoringModelID string
 	databaseCheck  Check
@@ -71,11 +79,10 @@ type server struct {
 }
 
 type seasonAward struct {
-	Model       string
-	Category    string
-	PlayerName  string
-	ClubName    string
-	ClubIconURL string
+	Model      string
+	Code       string
+	Category   string
+	Candidates []awards.Candidate
 }
 
 type pageData struct {
@@ -89,6 +96,7 @@ type pageData struct {
 	RatingMode        bool
 	PageURL           string
 	RefreshURL        string
+	AwardsRefreshURL  string
 	ActivePage        string
 	ErrorMessage      string
 	UpdatedAt         time.Time
@@ -98,8 +106,8 @@ type pageData struct {
 
 // New constructs the application HTTP handler.
 func New(cfg Config) (http.Handler, error) {
-	if cfg.Logger == nil || cfg.Leaderboard == nil || cfg.Auth == nil {
-		return nil, fmt.Errorf("logger, leaderboard, and auth are required")
+	if cfg.Logger == nil || cfg.Leaderboard == nil || cfg.SeasonAwards == nil || cfg.Auth == nil {
+		return nil, fmt.Errorf("logger, leaderboard, season awards, and auth are required")
 	}
 	templates, err := template.New("").Funcs(template.FuncMap{
 		"clubLogoURL": clubLogoURL,
@@ -117,7 +125,7 @@ func New(cfg Config) (http.Handler, error) {
 	}
 
 	s := &server{
-		logger: cfg.Logger, leaderboard: cfg.Leaderboard,
+		logger: cfg.Logger, leaderboard: cfg.Leaderboard, seasonAwards: cfg.SeasonAwards,
 		editionID: cfg.EditionID, scoringModelID: cfg.ScoringModelID,
 		databaseCheck: cfg.DatabaseCheck, redisCheck: cfg.RedisCheck,
 		reportError: cfg.ReportError, auth: cfg.Auth,
@@ -127,6 +135,7 @@ func New(cfg Config) (http.Handler, error) {
 	mux.Handle("GET /{$}", s.requireAuth(http.HandlerFunc(s.home)))
 	mux.Handle("GET /clasificacion", s.requireAuth(http.HandlerFunc(s.classification)))
 	mux.Handle("GET /metodologia", s.requireAuth(http.HandlerFunc(s.methodology)))
+	mux.Handle("GET /premios", s.requireAuth(http.HandlerFunc(s.seasonAwardsFragment)))
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.login)
 	mux.HandleFunc("GET /register", s.registerPage)
@@ -161,7 +170,8 @@ func (s *server) leaderboardPage(response http.ResponseWriter, request *http.Req
 		return
 	}
 
-	data := s.load(request, position, model, pageURL)
+	loadAwards := activePage == "overview" && request.Header.Get("HX-Request") != "true"
+	data := s.load(request, position, model, pageURL, loadAwards)
 	data.ActivePage = activePage
 	data.User = s.currentUser(response, request)
 	data.CSRFToken = s.csrfToken(response, request)
@@ -182,7 +192,23 @@ func (s *server) methodology(response http.ResponseWriter, request *http.Request
 	s.render(response, request, http.StatusOK, "methodology", data)
 }
 
-func (s *server) load(request *http.Request, position, model, pageURL string) pageData {
+func (s *server) seasonAwardsFragment(response http.ResponseWriter, request *http.Request) {
+	model := request.URL.Query().Get("model")
+	if !validSeasonAwardModel(model) {
+		http.Error(response, "invalid model", http.StatusBadRequest)
+		return
+	}
+	models := s.loadSeasonAwardModels(request.Context())
+	data := pageData{
+		SeasonAwards:     filterSeasonAwards(models, model),
+		Model:            model,
+		AwardsRefreshURL: seasonAwardsRefreshURL(model),
+	}
+	response.Header().Set("Cache-Control", "no-store")
+	s.render(response, request, http.StatusOK, "season-awards", data)
+}
+
+func (s *server) load(request *http.Request, position, model, pageURL string, loadAwards bool) pageData {
 	query := url.Values{}
 	if position != "" {
 		query.Set("position", position)
@@ -196,6 +222,9 @@ func (s *server) load(request *http.Request, position, model, pageURL string) pa
 	}
 
 	models := seasonAwardModels()
+	if loadAwards {
+		models = s.loadSeasonAwardModels(request.Context())
+	}
 	data := pageData{
 		SeasonAwards:      filterSeasonAwards(models, model),
 		SeasonAwardModels: models,
@@ -205,6 +234,7 @@ func (s *server) load(request *http.Request, position, model, pageURL string) pa
 		RatingMode:        s.scoringModelID == leaderboard.PlayerMatchRatingModelID,
 		PageURL:           pageURL,
 		RefreshURL:        refreshURL,
+		AwardsRefreshURL:  seasonAwardsRefreshURL(model),
 		UpdatedAt:         time.Now().UTC(),
 	}
 	if !data.Configured {
@@ -225,15 +255,46 @@ func (s *server) load(request *http.Request, position, model, pageURL string) pa
 	return data
 }
 
+func (s *server) loadSeasonAwardModels(ctx context.Context) []seasonAward {
+	models := seasonAwardModels()
+	if s.editionID == "" {
+		return models
+	}
+	codes := make([]string, len(models))
+	for index, award := range models {
+		codes[index] = award.Code
+	}
+	candidates, err := s.seasonAwards.TopCandidates(ctx, s.editionID, codes, 3)
+	if err != nil {
+		s.report(ctx, "load season awards", err)
+		return models
+	}
+	for index := range models {
+		models[index].Candidates = candidates[models[index].Code]
+	}
+	return models
+}
+
+func seasonAwardsRefreshURL(model string) string {
+	if model == "" {
+		return "/premios"
+	}
+	return "/premios?model=" + url.QueryEscape(model)
+}
+
+func (a seasonAward) Projected() bool {
+	return len(a.Candidates) > 0 && a.Candidates[0].Projection
+}
+
 func seasonAwardModels() []seasonAward {
-	// Winner fields stay empty until a published season-award selection is loaded.
+	// Candidate lists stay empty until a published season-award selection is loaded.
 	return []seasonAward{
-		{Model: "player-of-the-season", Category: "Jugador de la temporada"},
-		{Model: "defender-of-the-season", Category: "Defensa de la temporada"},
-		{Model: "goalkeeper-of-the-season", Category: "Portero de la temporada"},
-		{Model: "young-player-of-the-season", Category: "Jugador joven de la temporada (Sub-23)"},
-		{Model: "decisive-substitute", Category: "Suplente más decisivo de la temporada"},
-		{Model: "most-improved-player", Category: "Jugador con mayor progresión"},
+		{Model: "player-of-the-season", Code: awards.PlayerOfSeason, Category: "Jugador de la temporada"},
+		{Model: "defender-of-the-season", Code: awards.DefenderOfSeason, Category: "Defensa de la temporada"},
+		{Model: "goalkeeper-of-the-season", Code: awards.GoalkeeperOfSeason, Category: "Portero de la temporada"},
+		{Model: "young-player-of-the-season", Code: awards.YoungPlayerOfSeason, Category: "Jugador joven de la temporada (Sub-23)"},
+		{Model: "decisive-substitute", Code: awards.ImpactSubstituteOfSeason, Category: "Suplente más decisivo de la temporada"},
+		{Model: "most-improved-player", Code: awards.MostImprovedPlayer, Category: "Jugador con mayor progresión"},
 	}
 }
 

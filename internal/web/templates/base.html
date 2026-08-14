@@ -58,27 +58,7 @@
       </header>
 
       {{if eq .ActivePage "overview"}}
-      <section class="grid award-grid" aria-label="Premios de la temporada">
-        {{range .SeasonAwards}}
-        <article class="card award">
-          <div class="award-heading">
-            <div class="kicker">Premio de temporada</div>
-            {{if not .PlayerName}}<span class="award-status">Fórmula v1 · ganador pendiente</span>{{end}}
-          </div>
-          <h2>{{.Category}}</h2>
-          <div class="award-player">
-            {{if .ClubIconURL}}
-              <img class="award-club-icon" src="{{.ClubIconURL}}" alt="{{.ClubName}}">
-            {{else}}
-              <span class="award-club-placeholder" aria-hidden="true">
-                <svg viewBox="0 0 24 24" focusable="false"><path d="M12 2.5 20 5v6.1c0 5-3.3 8.5-8 10.4-4.7-1.9-8-5.4-8-10.4V5l8-2.5Z"/><path d="m8.7 11.8 2.1 2.1 4.7-5"/></svg>
-              </span>
-            {{end}}
-            <strong>{{if .PlayerName}}{{.PlayerName}}{{else}}Por definir{{end}}</strong>
-          </div>
-        </article>
-        {{end}}
-      </section>
+      {{template "season-awards" .}}
       {{end}}
 
       <form class="filters card" action="{{.PageURL}}" method="get" aria-label="Filtros de clasificación"

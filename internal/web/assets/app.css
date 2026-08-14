@@ -84,16 +84,24 @@ code { color: var(--accent); font-family: var(--font-mono); }
 .card { border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--elev-raised); }
 .grid { display: grid; gap: 16px; }
 .award-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 32px; }
-.award { display: flex; min-height: 178px; padding: 18px; flex-direction: column; }
+.award { display: flex; min-height: 292px; padding: 18px; flex-direction: column; }
 .award-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .award-status { flex: 0 0 auto; padding: 3px 6px; border-radius: var(--radius-pill); background: #f2f2f2; color: var(--muted); font: 550 9px/1.2 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; }
-.award h2 { max-width: 24ch; margin: 14px 0 24px; font: 650 17px/1.2 var(--font-display); letter-spacing: -.025em; }
-.award-player { display: flex; align-items: center; gap: 11px; min-width: 0; margin-top: auto; }
-.award-player strong { overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
-.award-club-icon, .award-club-placeholder { display: grid; flex: 0 0 auto; width: 40px; height: 40px; place-items: center; }
+.award-status.published { background: #ecfdf3; color: var(--success); }
+.award-status.projection { background: var(--accent-soft); color: var(--accent); }
+.award h2 { max-width: 24ch; margin: 14px 0 20px; font: 650 17px/1.2 var(--font-display); letter-spacing: -.025em; }
+.award-ranking { display: grid; gap: 0; margin: auto 0 0; padding: 0; list-style: none; }
+.award-player { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 9px 0; border-top: 1px solid var(--border); }
+.award-rank { display: grid; flex: 0 0 auto; width: 22px; height: 22px; place-items: center; border-radius: 50%; background: #f2f2f2; color: var(--muted); font: 650 11px/1 var(--font-mono); }
+.award-player-info { min-width: 0; }
+.award-player-info strong, .award-player-info small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.award-player-info strong { font-size: 13px; }
+.award-player-info small { color: var(--muted); font-size: 10px; }
+.award-club-icon, .award-club-placeholder { display: grid; flex: 0 0 auto; width: 34px; height: 34px; place-items: center; }
 .award-club-icon { object-fit: contain; }
 .award-club-placeholder { border-radius: 50%; background: #f5f5f5; color: #a3a3a3; box-shadow: var(--elev-ring); }
-.award-club-placeholder svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+.award-club-placeholder svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.5; }
+.award-empty { margin: auto 0 0; color: var(--muted); font-size: 12px; }
 
 .filters { position: relative; display: grid; grid-template-columns: minmax(180px, 1.2fr) repeat(2, 1fr) auto; align-items: end; gap: 12px; margin-bottom: 34px; padding: 16px; }
 .field label, .field-label { display: block; margin-bottom: 6px; }

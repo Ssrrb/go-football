@@ -11,10 +11,25 @@ import (
 	"time"
 
 	"github.com/Ssrrb/go-football/internal/auth"
+	"github.com/Ssrrb/go-football/internal/awards"
 	"github.com/Ssrrb/go-football/internal/leaderboard"
 )
 
 type leaderboardStub struct{}
+
+type seasonAwardsStub struct{}
+
+func (seasonAwardsStub) TopCandidates(_ context.Context, _ string, codes []string, _ int) (map[string][]awards.Candidate, error) {
+	result := make(map[string][]awards.Candidate, len(codes))
+	for _, code := range codes {
+		result[code] = []awards.Candidate{
+			{AwardCode: code, Rank: 1, PlayerName: "Ada Striker", TeamName: "Club Cerro Porteño", ScoreMilli: 95420, Projection: true},
+			{AwardCode: code, Rank: 2, PlayerName: "Bea Keeper", TeamName: "Club Guaraní", ScoreMilli: 90100, Projection: true},
+			{AwardCode: code, Rank: 3, PlayerName: "Cris Defender", TeamName: "Olimpia", ScoreMilli: 87500, Projection: true},
+		}
+	}
+	return result, nil
+}
 
 type authStub struct{}
 
@@ -58,7 +73,8 @@ func testHandlerWithScoringModel(t *testing.T, scoringModelID string) http.Handl
 	check := func(context.Context) error { return nil }
 	handler, err := New(Config{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Leaderboard: leaderboardStub{},
-		EditionID: "edition", ScoringModelID: scoringModelID, DatabaseCheck: check, RedisCheck: check,
+		SeasonAwards: seasonAwardsStub{}, EditionID: "edition", ScoringModelID: scoringModelID,
+		DatabaseCheck: check, RedisCheck: check,
 		Auth: authStub{},
 	})
 	if err != nil {
@@ -129,6 +145,40 @@ func TestHomeShowsSeasonAwardCardsWithoutPlayerPhotos(t *testing.T) {
 	}
 	if strings.Contains(body, "award-player-photo") {
 		t.Fatal("season award cards must not render player photos")
+	}
+}
+
+func TestHomeShowsTopThreePlayersForEverySeasonAward(t *testing.T) {
+	response := httptest.NewRecorder()
+	testHandler(t).ServeHTTP(response, authenticatedRequest(http.MethodGet, "/", nil))
+	body := response.Body.String()
+
+	if count := strings.Count(body, `class="award-ranking"`); count != 6 {
+		t.Fatalf("expected a top-three ranking for all 6 awards, got %d", count)
+	}
+	if count := strings.Count(body, `class="award-rank">3</span>`); count != 6 {
+		t.Fatalf("expected each award to show its third-ranked player, got %d", count)
+	}
+	if !strings.Contains(body, "Ada Striker") || !strings.Contains(body, "95.420 pts") {
+		t.Fatal("expected player names and award scores")
+	}
+	if !strings.Contains(body, "Proyección en vivo") || !strings.Contains(body, `hx-trigger="every 15s"`) {
+		t.Fatal("expected provisional awards to refresh automatically")
+	}
+}
+
+func TestSeasonAwardsFragmentRecalculatesSelectedCategory(t *testing.T) {
+	response := httptest.NewRecorder()
+	request := authenticatedRequest(http.MethodGet, "/premios?model=goalkeeper-of-the-season", nil)
+	request.Header.Set("HX-Request", "true")
+	testHandler(t).ServeHTTP(response, request)
+	body := response.Body.String()
+
+	if response.Code != http.StatusOK || strings.Count(body, `class="card award"`) != 1 {
+		t.Fatalf("unexpected awards fragment: %d %s", response.Code, body)
+	}
+	if strings.Contains(body, "<!doctype html>") || !strings.Contains(body, `hx-get="/premios?model=goalkeeper-of-the-season"`) {
+		t.Fatal("expected a self-refreshing awards fragment that preserves the category")
 	}
 }
 

@@ -18,9 +18,8 @@ const (
 )
 
 const (
-	weightedPercentiles          = "weighted_percentiles"
-	weightedDeltasCentered       = "weighted_percentile_deltas_centered"
-	pointsScale            int64 = 1000
+	weightedStandardized       = "weighted_standardized_components"
+	pointsScale          int64 = 1000
 )
 
 //go:embed formulas/*.json
@@ -61,10 +60,10 @@ type Component struct {
 	Metric    string  `json:"metric"`
 }
 
-// LoadCatalog loads and validates the active version-one catalog. A fresh value
+// LoadCatalog loads and validates the active version-two catalog. A fresh value
 // is returned on every call so callers cannot mutate shared formula state.
 func LoadCatalog() (Catalog, error) {
-	payload, err := formulaFiles.ReadFile("formulas/season-v1.json")
+	payload, err := formulaFiles.ReadFile("formulas/season-v2.json")
 	if err != nil {
 		return Catalog{}, fmt.Errorf("read season award formulas: %w", err)
 	}
@@ -88,45 +87,43 @@ func (c Catalog) Formula(code string) (Formula, bool) {
 	return Formula{}, false
 }
 
-// Score combines already cohort-normalized percentiles and returns integer
-// millipoints on a 0..100 scale. For progression, reliability is the published
-// minutes factor. For all other awards pass 1.
-func (f Formula) Score(percentiles map[string]float64, reliability float64) (int64, error) {
-	if reliability < 0 || reliability > 1 || math.IsNaN(reliability) {
-		return 0, fmt.Errorf("reliability must be in [0,1]")
+// RawScore applies the published formula to already standardized components.
+// It is the value used to rank candidates; unlike a percentile it is unbounded
+// and preserves the distance between performances.
+func (f Formula) RawScore(components map[string]float64) (float64, error) {
+	if f.Aggregation != weightedStandardized {
+		return 0, fmt.Errorf("unsupported aggregation %q", f.Aggregation)
 	}
 	weighted := 0.0
 	for _, component := range f.Components {
-		value, ok := percentiles[component.Code]
+		value, ok := components[component.Code]
 		if !ok {
-			return 0, fmt.Errorf("missing normalized component %q", component.Code)
+			return 0, fmt.Errorf("missing standardized component %q", component.Code)
 		}
-		if value < 0 || value > 1 || math.IsNaN(value) {
-			return 0, fmt.Errorf("component %q must be in [0,1]", component.Code)
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return 0, fmt.Errorf("component %q must be finite", component.Code)
 		}
 		if component.Direction == "lower" {
-			value = 1 - value
+			value = -value
 		}
 		weighted += component.Weight * value
 	}
+	return weighted, nil
+}
 
-	var score float64
-	switch f.Aggregation {
-	case weightedPercentiles:
-		score = 100 * weighted
-	case weightedDeltasCentered:
-		// weighted is in [0,1]; centering distinguishes actual decline (<50)
-		// from improvement (>50), while limited minutes pull the result to 50.
-		score = 50 + 50*reliability*(2*weighted-1)
-	default:
-		return 0, fmt.Errorf("unsupported aggregation %q", f.Aggregation)
+// Score converts RawScore to display-only millipoints on a 0..100 logistic
+// scale. This monotonic conversion never changes candidate order.
+func (f Formula) Score(components map[string]float64) (int64, error) {
+	raw, err := f.RawScore(components)
+	if err != nil {
+		return 0, err
 	}
-	score = math.Max(0, math.Min(100, score))
+	score := 100 / (1 + math.Exp(-raw))
 	return int64(math.Round(score * float64(pointsScale))), nil
 }
 
 func (c Catalog) validate() error {
-	if c.Specification != "go-football/season-awards" || c.CatalogVersion != 1 || c.Status != "active" {
+	if c.Specification != "go-football/season-awards" || c.CatalogVersion != 2 || c.Status != "active" {
 		return fmt.Errorf("unsupported season award catalog")
 	}
 	if len(c.Awards) != 6 {
@@ -134,7 +131,7 @@ func (c Catalog) validate() error {
 	}
 	seen := make(map[string]bool, len(c.Awards))
 	for _, formula := range c.Awards {
-		if formula.ID == "" || formula.Code == "" || formula.Name == "" || formula.Version != 1 || formula.Status != "active" {
+		if formula.ID == "" || formula.Code == "" || formula.Name == "" || formula.Version != c.CatalogVersion || formula.Status != "active" {
 			return fmt.Errorf("invalid formula metadata for %q", formula.Code)
 		}
 		if seen[formula.Code] {
@@ -162,7 +159,7 @@ func (c Catalog) validate() error {
 		if math.Abs(weight-1) > 1e-9 {
 			return fmt.Errorf("formula %q weights total %.6f, want 1", formula.Code, weight)
 		}
-		if formula.Aggregation != weightedPercentiles && formula.Aggregation != weightedDeltasCentered {
+		if formula.Aggregation != weightedStandardized {
 			return fmt.Errorf("formula %q uses unsupported aggregation %q", formula.Code, formula.Aggregation)
 		}
 	}

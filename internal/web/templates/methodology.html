@@ -33,15 +33,16 @@
         <p>Los 450 minutos actúan como una muestra previa de cinco partidos completos. Con 90 minutos la actuación propia aporta 17% del resultado; con 450 aporta 50% y con 900 aporta 67%. El ajuste se recalcula al incorporar cada partido finalizado y nunca utiliza partidos en vivo, minutos nulos o ratings ausentes.</p>
       </section>
       <section class="card method integrity">
-        <div class="kicker">Premios de temporada · fórmulas v1 activas</div><h2>Seis categorías, una política reproducible</h2>
-        <p>Todos los componentes se normalizan por percentiles entre los candidatos elegibles, se ponderan en una escala de 0 a 100 y se conservan en milipuntos. Los datos ausentes no cuentan como cero y cada categoría tiene minutos mínimos y desempates deterministas.</p>
+        <div class="kicker">Premios de temporada · fórmulas v2 activas</div><h2>Seis categorías, una política reproducible</h2>
+        <p>Cada estadística se convierte primero en un Z-score robusto dentro de la posición. Los porcentajes se ajustan por cantidad de intentos y los minutos aportan fiabilidad mediante <code>R = Min/(Min+900)</code>; así, la jornada 4 de 22 sigue siendo comparable sin tratar una muestra corta como definitiva.</p>
         <ul>
-          <li><strong>Jugador y joven Sub-23:</strong> calidad, producción, influencia, consistencia y disponibilidad.</li>
-          <li><strong>Defensa:</strong> producción defensiva, eficacia en duelos, defensa colectiva, calidad, influencia y disciplina.</li>
-          <li><strong>Portero:</strong> goles evitados, atajadas, control del área, porterías a cero, distribución y errores.</li>
-          <li><strong>Suplente decisivo:</strong> goles según el estado del marcador, cambio de puntos, rendimiento, frecuencia y tamaño de muestra.</li>
-          <li><strong>Mayor progresión:</strong> compara el primer y último 35% de jornadas; pondera mejora de rating (30%), aciertos (20%), reducción de fallas (20%), influencia (20%) y minutos (10%). La fiabilidad depende de los minutos en ambas ventanas.</li>
+          <li><strong>Jugador y joven Sub-23:</strong> 80% calidad posicional ajustada por fiabilidad y 20% volumen. El Sub-23 usa la misma fórmula, sin bono de edad.</li>
+          <li><strong>Defensa:</strong> duelos, juego aéreo, intercepciones, entradas, bloqueos, recuperaciones y progresión, menos errores; 85% rendimiento fiable y 15% volumen.</li>
+          <li><strong>Portero:</strong> 40% atajadas ajustadas por remates enfrentados, más distribución, centros, salidas, errores evitados y volumen.</li>
+          <li><strong>Suplente decisivo:</strong> solo acciones posteriores a entrar; combina 55% impacto ponderado por estado del marcador, 25% calidad y 20% entradas desde el banco.</li>
+          <li><strong>Mayor progresión:</strong> compara estrictamente jornadas 1–11 contra 12–22. Pondera Δ calidad (45%), Δ eficiencia (20%), Δ influencia (20%) y crecimiento de rol estandarizado (15%). No aparece durante la primera mitad.</li>
         </ul>
+        <p>Mientras la edición está en curso, las tarjetas muestran una <strong>proyección en vivo</strong> separada del premio oficial. Se recalcula desde partidos finalizados cada 15 segundos. La escala visual 0–100 es una transformación monótona del score estandarizado y no altera el orden. Al publicarse una selección oficial, esta reemplaza automáticamente la proyección.</p>
         <p>Una corrección genera otra versión de selección. Cambiar pesos o reglas exige una nueva versión de fórmula; una versión publicada nunca se edita.</p>
       </section>
       <section class="card method integrity">
