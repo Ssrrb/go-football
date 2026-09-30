@@ -13,6 +13,10 @@ type Config struct {
 	Environment            string
 	HTTPAddress            string
 	DatabaseURL            string
+	DBMinConns             int
+	DBMaxConns             int
+	LeaderboardCacheTTL    time.Duration
+	SeasonAwardsCacheTTL   time.Duration
 	RedisAddress           string
 	RedisPassword          string
 	RedisDB                int
@@ -33,6 +37,32 @@ func Load() (Config, error) {
 	redisDB, err := strconv.Atoi(value("REDIS_DB", "0"))
 	if err != nil || redisDB < 0 {
 		return Config{}, fmt.Errorf("REDIS_DB must be a non-negative integer")
+	}
+
+	dbMinConns, err := strconv.Atoi(value("DB_MIN_CONNS", "2"))
+	if err != nil || dbMinConns < 0 {
+		return Config{}, fmt.Errorf("DB_MIN_CONNS must be a non-negative integer")
+	}
+
+	// Zero keeps the pgxpool default of the greater of 4 or the CPU count.
+	dbMaxConns, err := strconv.Atoi(value("DB_MAX_CONNS", "0"))
+	if err != nil || dbMaxConns < 0 {
+		return Config{}, fmt.Errorf("DB_MAX_CONNS must be a non-negative integer")
+	}
+	if dbMaxConns != 0 && dbMaxConns < dbMinConns {
+		return Config{}, fmt.Errorf("DB_MAX_CONNS must be at least DB_MIN_CONNS")
+	}
+
+	leaderboardCacheTTL, err := time.ParseDuration(value("LEADERBOARD_CACHE_TTL", "15s"))
+	if err != nil || leaderboardCacheTTL < 0 {
+		return Config{}, fmt.Errorf("LEADERBOARD_CACHE_TTL must be a non-negative duration")
+	}
+
+	// Live season-award candidates are a full-season recomputation, so they are
+	// cached for longer than the published leaderboard.
+	seasonAwardsCacheTTL, err := time.ParseDuration(value("SEASON_AWARDS_CACHE_TTL", "60s"))
+	if err != nil || seasonAwardsCacheTTL < 0 {
+		return Config{}, fmt.Errorf("SEASON_AWARDS_CACHE_TTL must be a non-negative duration")
 	}
 
 	shutdownTimeout, err := time.ParseDuration(value("SHUTDOWN_TIMEOUT", "10s"))
@@ -73,6 +103,10 @@ func Load() (Config, error) {
 		Environment:            environment,
 		HTTPAddress:            value("HTTP_ADDR", ":8080"),
 		DatabaseURL:            value("DATABASE_URL", "postgres://football:football@localhost:5432/football?sslmode=disable"),
+		DBMinConns:             dbMinConns,
+		DBMaxConns:             dbMaxConns,
+		LeaderboardCacheTTL:    leaderboardCacheTTL,
+		SeasonAwardsCacheTTL:   seasonAwardsCacheTTL,
 		RedisAddress:           value("REDIS_ADDR", "localhost:6379"),
 		RedisPassword:          os.Getenv("REDIS_PASSWORD"),
 		RedisDB:                redisDB,

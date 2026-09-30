@@ -8,8 +8,19 @@ official APF data feed.
 - **Go + server-rendered HTML + HTMX** for the web application
 - **Python** for independent APF extraction and ETL jobs
 - **PostgreSQL 16** as the source of truth
-- **Redis sorted sets** as a rebuildable real-time leaderboard projection
+- **In-process ranking cache** as the read layer for the default scoring model
 - **Docker Compose** for local infrastructure
+
+### Redis status
+
+Redis is **not** currently a read model for the leaderboard. The client is
+configured, connected, and pinged by `/health/ready`, but no process writes
+sorted sets: the outbox consumer described in
+[`data/data-model.md`](data/data-model.md) has not been implemented, so a
+`ZADD` is never issued. The default scoring model (`SCORING_MODEL_ID=default`)
+computes the ranking from finished-match facts in PostgreSQL and is served from
+a short-lived in-process cache (`LEADERBOARD_CACHE_TTL`, default 15s). Treat
+Redis as reserved capacity, not a working cache.
 
 ## Repository layout
 
@@ -145,8 +156,32 @@ jobs, not unit tests. See [`etl/README.md`](etl/README.md) and the
 | `GET /auth/google` | Start Google OAuth when configured |
 | `GET /auth/google/callback` | Google OAuth callback |
 | `GET /health/live` | Process liveness |
-| `GET /health/ready` | PostgreSQL and Redis readiness |
+| `GET /health/ready` | PostgreSQL and Redis connectivity (not proof of a populated cache) |
 
-The detailed data model, correction rules, Redis keys, and outbox invariants are
-in [`data/data-model.md`](data/data-model.md). The system design is in
+## Database latency
+
+Leaderboard reads go to a single remote PostgreSQL, so a query costs one network
+round trip even when it executes in tens of milliseconds. Two settings keep
+that cost off the request path:
+
+- `DB_MIN_CONNS` (default 2) keeps that many connections open and warm, so the
+  first request after a restart does not pay a TLS handshake.
+- `LEADERBOARD_CACHE_TTL` (default 15s) collapses concurrent readers of the same
+  ranking onto a single query. Set it to `0` to disable.
+- `SEASON_AWARDS_CACHE_TTL` (default 60s) does the same for the season-award
+  projection, which is far more expensive than the leaderboard. Set it to `0` to
+  disable.
+
+The season-award projection never runs inside a document render. The overview
+page ships the award card shells and `GET /premios` fills them in after first
+paint, so the leaderboard is not queued behind it. See
+[`docs/season-awards.md`](docs/season-awards.md).
+
+Every authenticated request still resolves its session in PostgreSQL, which is
+one read plus one throttled touch. That round trip, not the leaderboard, is now
+the floor for a page load.
+
+The detailed data model, correction rules, and the (not yet implemented) Redis
+projection and outbox invariants are in
+[`data/data-model.md`](data/data-model.md). The system design is in
 [`docs/architecture.md`](docs/architecture.md).

@@ -4,6 +4,7 @@ package leaderboard
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Ssrrb/go-football/internal/performance"
 )
@@ -96,11 +97,23 @@ type CachedEntry struct {
 type Service struct {
 	repository Repository
 	cache      Cache
+	memory     *MemoryCache
 }
 
 // NewService creates a leaderboard service.
 func NewService(repository Repository, cache Cache) *Service {
 	return &Service{repository: repository, cache: cache}
+}
+
+// NewCachedService creates a leaderboard service that also serves ranking
+// results from an in-process cache for the given duration. A non-positive
+// duration disables the cache.
+func NewCachedService(repository Repository, cache Cache, ttl time.Duration) *Service {
+	return &Service{
+		repository: repository,
+		cache:      cache,
+		memory:     NewMemoryCache(ttl),
+	}
 }
 
 // List returns ranked entries for a validated position filter.
@@ -111,6 +124,15 @@ func (s *Service) List(ctx context.Context, query Query) ([]Entry, error) {
 	if query.Limit <= 0 || query.Limit > 100 {
 		query.Limit = defaultLimit
 	}
+	if s.memory == nil {
+		return s.rank(ctx, query)
+	}
+	return s.memory.get(ctx, query, s.rank)
+}
+
+// rank reads the ranking from the Redis projection when one exists and falls
+// back to the authoritative PostgreSQL query.
+func (s *Service) rank(ctx context.Context, query Query) ([]Entry, error) {
 	// The default leaderboard is computed directly from normalized match
 	// statistics and does not have a Redis scoring-model projection.
 	if s.cache != nil && !query.UsesBasePerformance() {

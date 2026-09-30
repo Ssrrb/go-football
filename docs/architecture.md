@@ -1,8 +1,8 @@
 # Architecture
 
 Go Football is a small monorepo with independently deployable web and data
-processes. PostgreSQL is authoritative; Redis is a disposable real-time read
-model.
+processes. PostgreSQL is authoritative. The web process keeps a short-lived
+in-process ranking cache; a Redis read model is designed but not implemented.
 
 ```mermaid
 flowchart LR
@@ -11,10 +11,10 @@ flowchart LR
     ETL --> PG[(PostgreSQL)]
     PG --> SCORE[Scoring publisher]
     SCORE --> PG
-    PG --> OUTBOX[Leaderboard outbox]
-    OUTBOX --> REDIS[(Redis sorted sets)]
+    PG -.-> OUTBOX[Leaderboard outbox<br/>not yet consumed]
+    OUTBOX -.-> REDIS[(Redis sorted sets<br/>not yet written)]
     BROWSER[Browser + HTMX] --> GO[Go web service]
-    GO --> REDIS
+    GO --> MEM[(In-process ranking cache)]
     GO --> PG
 ```
 
@@ -32,13 +32,20 @@ flowchart LR
 
 ## Request path and degradation
 
-The leaderboard service reads a versioned Redis sorted set first, enriches UUID
-members from PostgreSQL, and falls back to PostgreSQL ranking queries if Redis is
-empty or unavailable. Tied entries share a competition rank; UUID ordering gives
-stable pagination only. Authentication users, external identities, and hashed
-opaque sessions are authoritative in PostgreSQL; Google uses authorization code
-flow with PKCE. `/health/live` checks the process and `/health/ready` checks
-PostgreSQL and Redis.
+The leaderboard service keeps a short-lived in-process cache keyed by edition,
+scoring model, position, and limit. On a miss it queries PostgreSQL. Tied entries
+share a competition rank; UUID ordering gives stable pagination only.
+Authentication users, external identities, and hashed opaque sessions are
+authoritative in PostgreSQL; Google uses authorization code flow with PKCE.
+`/health/live` checks the process and `/health/ready` checks PostgreSQL and Redis
+connectivity.
+
+A Redis sorted-set projection is defined in
+[`data/data-model.md`](../data/data-model.md) and the reader exists in
+`internal/leaderboard/redis.go`, but no writer does. `Service.rank` consults it
+only for non-default scoring models, so with the default `SCORING_MODEL_ID=default`
+it is never reached. Building it requires an outbox consumer, not a
+configuration change.
 
 ## Data flow
 
@@ -48,8 +55,8 @@ PostgreSQL and Redis.
    transactionally.
 3. A versioned scoring model publishes match and aggregate scores in PostgreSQL.
 4. The same transaction appends `leaderboard_outbox` events.
-5. A worker applies newer aggregate versions to Redis sorted sets. Redis can be
-   rebuilt from PostgreSQL at any time.
+5. *(Not implemented.)* A worker would apply newer aggregate versions to Redis
+   sorted sets. Until that worker exists, Redis holds no ranking data.
 
 Extraction, loading, scoring, and outbox consumption remain separate pipeline
 stages so each can be retried idempotently. The current Python package implements

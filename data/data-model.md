@@ -6,9 +6,14 @@ executable PostgreSQL definition is in [`db/schema.sql`](db/schema.sql).
 
 ## Decisions and terminology
 
-1. **PostgreSQL is authoritative; Redis is a rebuildable read model.** Raw data,
-   current normalized data, scoring inputs, formula versions, and published
-   selections remain in PostgreSQL.
+1. **PostgreSQL is authoritative; Redis is a planned rebuildable read model.**
+   Raw data, current normalized data, scoring inputs, formula versions, and
+   published selections remain in PostgreSQL. The Redis read model described in
+   [Redis leaderboard model](#redis-leaderboard-model) is **not implemented**:
+   no process writes sorted sets, so the reader in
+   `internal/leaderboard/redis.go` only returns data if a writer is added. The
+   web process currently serves the default scoring model from a short-lived
+   in-process cache instead.
 2. **A product “round” is an APF gameweek.** APF also calls the regular
    competition phase a `round`; that concept is stored as `tournament_stage` to
    prevent the two meanings from being mixed.
@@ -206,6 +211,11 @@ used as a short-lived session cache.
 
 ## Redis leaderboard model
 
+> **Status: designed, not implemented.** This section is the intended design.
+> There is currently no outbox consumer and no code path that issues `ZADD` or
+> `ZREM`, so no sorted set is ever populated. `/health/ready` pings Redis but
+> does not assert that a ranking projection exists.
+
 Use one sorted set per scope and optional position:
 
 ```text
@@ -224,12 +234,12 @@ lb:v1:gameweek:{gameweek_id}:model:{model_id}:pos:{GK|DEF|MID|FWD}
   `1250` (the `(` makes the lower bound exclusive)
 - ordinal rank: `1 + ZREVRANK key player_id`
 
-A consumer reads `leaderboard_outbox` in ID order. A Lua script should apply an
-outbox event only when its `aggregate_version` is newer than the member's stored
-version, update the overall and position sets atomically, and remove the old
-position if it changed. Mark `processed_at` only after success. Redis may be
-flushed and rebuilt entirely from `player_gameweek_score` and
-`player_edition_score`.
+**When built**, a consumer should read `leaderboard_outbox` in ID order. A Lua
+script should apply an outbox event only when its `aggregate_version` is newer
+than the member's stored version, update the overall and position sets
+atomically, and remove the old position if it changed. Mark `processed_at` only
+after success. Redis may be flushed and rebuilt entirely from
+`player_gameweek_score` and `player_edition_score`.
 
 Redis orders equal scores by member bytes; therefore it is suitable for the
 real-time cache but not for applying sporting tie-break rules to Team of the

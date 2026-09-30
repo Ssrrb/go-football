@@ -97,6 +97,7 @@ type pageData struct {
 	PageURL           string
 	RefreshURL        string
 	AwardsRefreshURL  string
+	AwardsDeferred    bool
 	ActivePage        string
 	ErrorMessage      string
 	UpdatedAt         time.Time
@@ -170,9 +171,14 @@ func (s *server) leaderboardPage(response http.ResponseWriter, request *http.Req
 		return
 	}
 
-	loadAwards := activePage == "overview" && request.Header.Get("HX-Request") != "true"
-	data := s.load(request, position, model, pageURL, loadAwards)
+	// Season-award candidates are a full-season recomputation, so a document
+	// render ships the card shells and the fragment loads the candidates once
+	// the page is on screen. The overview page therefore never waits for that
+	// query, and every poller shares the cached result.
+	deferredAwards := activePage == "overview" && request.Header.Get("HX-Request") != "true"
+	data := s.load(request, position, model, pageURL)
 	data.ActivePage = activePage
+	data.AwardsDeferred = deferredAwards
 	data.User = s.currentUser(response, request)
 	data.CSRFToken = s.csrfToken(response, request)
 	response.Header().Add("Vary", "HX-Request, HX-History-Restore-Request")
@@ -208,7 +214,7 @@ func (s *server) seasonAwardsFragment(response http.ResponseWriter, request *htt
 	s.render(response, request, http.StatusOK, "season-awards", data)
 }
 
-func (s *server) load(request *http.Request, position, model, pageURL string, loadAwards bool) pageData {
+func (s *server) load(request *http.Request, position, model, pageURL string) pageData {
 	query := url.Values{}
 	if position != "" {
 		query.Set("position", position)
@@ -221,10 +227,9 @@ func (s *server) load(request *http.Request, position, model, pageURL string, lo
 		refreshURL += "?" + encoded
 	}
 
+	// Only the award categories are needed here. The candidates themselves are
+	// loaded by the /premios fragment, so a document render stays cheap.
 	models := seasonAwardModels()
-	if loadAwards {
-		models = s.loadSeasonAwardModels(request.Context())
-	}
 	data := pageData{
 		SeasonAwards:      filterSeasonAwards(models, model),
 		SeasonAwardModels: models,

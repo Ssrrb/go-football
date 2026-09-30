@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,9 +18,12 @@ import (
 
 type leaderboardStub struct{}
 
-type seasonAwardsStub struct{}
+type seasonAwardsStub struct {
+	calls atomic.Int64
+}
 
-func (seasonAwardsStub) TopCandidates(_ context.Context, _ string, codes []string, _ int) (map[string][]awards.Candidate, error) {
+func (stub *seasonAwardsStub) TopCandidates(_ context.Context, _ string, codes []string, _ int) (map[string][]awards.Candidate, error) {
+	stub.calls.Add(1)
 	result := make(map[string][]awards.Candidate, len(codes))
 	for _, code := range codes {
 		result[code] = []awards.Candidate{
@@ -70,10 +74,15 @@ func authenticatedRequest(method, target string, body io.Reader) *http.Request {
 
 func testHandlerWithScoringModel(t *testing.T, scoringModelID string) http.Handler {
 	t.Helper()
+	return testHandlerWithAwards(t, scoringModelID, &seasonAwardsStub{})
+}
+
+func testHandlerWithAwards(t *testing.T, scoringModelID string, seasonAwards SeasonAwards) http.Handler {
+	t.Helper()
 	check := func(context.Context) error { return nil }
 	handler, err := New(Config{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)), Leaderboard: leaderboardStub{},
-		SeasonAwards: seasonAwardsStub{}, EditionID: "edition", ScoringModelID: scoringModelID,
+		SeasonAwards: seasonAwards, EditionID: "edition", ScoringModelID: scoringModelID,
 		DatabaseCheck: check, RedisCheck: check,
 		Auth: authStub{},
 	})
@@ -148,9 +157,9 @@ func TestHomeShowsSeasonAwardCardsWithoutPlayerPhotos(t *testing.T) {
 	}
 }
 
-func TestHomeShowsTopThreePlayersForEverySeasonAward(t *testing.T) {
+func TestSeasonAwardsFragmentShowsTopThreePlayersForEverySeasonAward(t *testing.T) {
 	response := httptest.NewRecorder()
-	testHandler(t).ServeHTTP(response, authenticatedRequest(http.MethodGet, "/", nil))
+	testHandler(t).ServeHTTP(response, authenticatedRequest(http.MethodGet, "/premios", nil))
 	body := response.Body.String()
 
 	if count := strings.Count(body, `class="award-ranking"`); count != 6 {
@@ -164,6 +173,39 @@ func TestHomeShowsTopThreePlayersForEverySeasonAward(t *testing.T) {
 	}
 	if !strings.Contains(body, "Proyección en vivo") || !strings.Contains(body, `hx-trigger="every 15s"`) {
 		t.Fatal("expected provisional awards to refresh automatically")
+	}
+	// The fragment replaces itself, so it must not ask for its own load again.
+	if strings.Contains(body, "load,") {
+		t.Fatal("the refreshed fragment must not re-trigger itself on load")
+	}
+}
+
+func TestHomeDefersSeasonAwardCandidatesToTheFragment(t *testing.T) {
+	// The season-award projection is a full-season recomputation. Rendering it
+	// inline would put it in front of the leaderboard, so the document ships
+	// card shells and lets the fragment fill them in after first paint.
+	seasonAwards := &seasonAwardsStub{}
+	response := httptest.NewRecorder()
+	testHandlerWithAwards(t, "model", seasonAwards).ServeHTTP(response, authenticatedRequest(http.MethodGet, "/", nil))
+	body := response.Body.String()
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected response: %d %s", response.Code, body)
+	}
+	if calls := seasonAwards.calls.Load(); calls != 0 {
+		t.Fatalf("expected the document render to skip the award query, got %d calls", calls)
+	}
+	if count := strings.Count(body, `class="card award"`); count != 6 {
+		t.Fatalf("expected 6 season award shells, got %d", count)
+	}
+	if strings.Contains(body, `class="award-ranking"`) {
+		t.Fatal("the document must not inline award candidates")
+	}
+	if !strings.Contains(body, `hx-trigger="load, every 15s"`) {
+		t.Fatal("expected the award section to load its candidates after first paint")
+	}
+	if count := strings.Count(body, "Calculando la proyección en vivo"); count != 6 {
+		t.Fatalf("expected 6 loading placeholders, got %d", count)
 	}
 }
 

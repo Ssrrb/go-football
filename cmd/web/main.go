@@ -57,11 +57,27 @@ func run(logger *slog.Logger) (runErr error) {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return err
+	}
+	// A TLS handshake against a remote pooler costs far more than the queries
+	// themselves, so keep idle connections warm instead of paying that cost on
+	// the first request that needs one.
+	poolConfig.MinConns = int32(cfg.DBMinConns)
+	poolConfig.MinIdleConns = int32(cfg.DBMinConns)
+	if cfg.DBMaxConns > 0 {
+		poolConfig.MaxConns = int32(cfg.DBMaxConns)
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		return err
+	}
+	prewarmPool(ctx, logger, pool, cfg.DBMinConns)
 
 	redisClient := redis.NewClient(&redis.Options{
 		Addr: cfg.RedisAddress, Password: cfg.RedisPassword, DB: cfg.RedisDB,
@@ -69,7 +85,10 @@ func run(logger *slog.Logger) (runErr error) {
 	defer redisClient.Close()
 
 	repository := leaderboard.NewPostgresRepository(pool)
-	leaderboards := leaderboard.NewService(repository, leaderboard.NewRedisCache(redisClient))
+	leaderboards := leaderboard.NewCachedService(
+		repository, leaderboard.NewRedisCache(redisClient), cfg.LeaderboardCacheTTL,
+	)
+	seasonAwards := awards.NewCachedService(awards.NewRepository(pool), cfg.SeasonAwardsCacheTTL)
 	google := auth.NewGoogleClient(auth.GoogleConfig{
 		ClientID: cfg.GoogleClientID, ClientSecret: cfg.GoogleClientSecret,
 		RedirectURL: cfg.GoogleRedirectURL,
@@ -81,7 +100,7 @@ func run(logger *slog.Logger) (runErr error) {
 	handler, err := webapp.New(webapp.Config{
 		Logger:         logger,
 		Leaderboard:    leaderboards,
-		SeasonAwards:   awards.NewRepository(pool),
+		SeasonAwards:   seasonAwards,
 		EditionID:      cfg.EditionID,
 		ScoringModelID: cfg.ScoringModelID,
 		DatabaseCheck:  pool.Ping,
@@ -130,4 +149,29 @@ func run(logger *slog.Logger) (runErr error) {
 		}
 		return err
 	}
+}
+
+// prewarmPool establishes the minimum number of pooled connections before the
+// server accepts traffic, so the first request does not pay for a TLS
+// handshake. Failures are logged rather than fatal: the process should still
+// start and report its readiness through /health/ready.
+func prewarmPool(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool, size int) {
+	if size <= 0 {
+		return
+	}
+	started := time.Now()
+	wait := make(chan struct{}, size)
+	for range size {
+		go func() {
+			connection, err := pool.Acquire(ctx)
+			if err == nil {
+				connection.Release()
+			}
+			wait <- struct{}{}
+		}()
+	}
+	for range size {
+		<-wait
+	}
+	logger.Info("database pool warmed", "connections", size, "duration", time.Since(started))
 }

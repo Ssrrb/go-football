@@ -288,15 +288,23 @@ period_aggregates AS (
            sum(key_passes) AS key_passes, sum(errors) AS errors
     FROM facts WHERE position_code IS NOT NULL GROUP BY player_id,season_half
 ),
+period_windows AS (
+    -- cohort and period_key keep every downstream join on a single column. A
+    -- two-column equi-join over CTE output has no statistics, so the planner
+    -- reads it as one row and rescans the standardized inputs per period.
+    SELECT period_aggregates.*,position_code||':'||season_half::text AS cohort,
+           player_id::text||'|'||position_code||':'||season_half::text AS period_key
+    FROM period_aggregates
+),
 period_priors AS (
-    SELECT season_half,position_code,
+    SELECT cohort,
            sum(passes_completed)/NULLIF(sum(passes_attempted),0) AS pass_rate,
            sum(duels_won)/NULLIF(sum(duels_won+duels_lost),0) AS duel_rate,
            sum(dribbles_completed)/NULLIF(sum(dribbles_attempted),0) AS dribble_rate
-    FROM period_aggregates GROUP BY season_half,position_code
+    FROM period_windows GROUP BY cohort
 ),
 period_metrics AS (
-    SELECT period_aggregates.*,
+    SELECT period_windows.*,
            90*(5*goals+3*assists+0.5*shots_on_target)/NULLIF(minutes,0) AS attack_metric,
            90*progression/NULLIF(minutes,0) AS progression_metric,
            90*(1.5*tackles_won+1.5*interceptions+0.75*blocks+0.5*recoveries
@@ -311,7 +319,7 @@ period_metrics AS (
              +(dribbles_attempted-dribbles_completed)+(crosses_attempted-crosses_completed)
              +(long_balls_attempted-long_balls_completed)+(shots-shots_on_target)
              +possession_lost+3*errors)/NULLIF(minutes,0) AS failure_metric
-    FROM period_aggregates JOIN period_priors USING(season_half,position_code)
+    FROM period_windows JOIN period_priors USING(cohort)
 ),
 position_weights(position_code,a,p,d,c,i) AS (
     VALUES ('GK'::text,$5::numeric,$6::numeric,$7::numeric,$8::numeric,$9::numeric),
@@ -320,52 +328,61 @@ position_weights(position_code,a,p,d,c,i) AS (
            ('FWD',$20::numeric,$21::numeric,$22::numeric,$23::numeric,$24::numeric)
 ),
 standard_inputs AS (
-    SELECT 'quality'::text AS family, position_code AS cohort, player_id, metric, value
-    FROM full_metrics CROSS JOIN LATERAL (VALUES
-      ('A'::text,attack_metric),('P',progression_metric),('D',defence_metric),('C',control_metric),('I',influence_metric)
-    ) AS inputs(metric,value)
-    UNION ALL
-    SELECT 'defence',position_code,player_id,metric,value FROM full_metrics CROSS JOIN LATERAL (VALUES
-      ('duels'::text,duel_rate),('aerial',aerial_rate),('interceptions',interceptions_per90),
-      ('tackles',tackles_per90),('blocks',blocks_per90),('recoveries',recoveries_per90),
-      ('progression',progression_metric),('errors',errors_per90)
-    ) inputs(metric,value) WHERE position_code='DEF'
-    UNION ALL
-    SELECT 'goalkeeper',position_code,player_id,metric,value FROM full_metrics CROSS JOIN LATERAL (VALUES
-      ('shot_stop'::text,adjusted_save_rate),('distribution',distribution_metric),
-      ('cross_control',cross_control_per90),('sweeping',sweeping_metric),('error_avoidance',error_avoidance_metric)
-    ) inputs(metric,value) WHERE position_code='GK' AND shots_faced>0
-    UNION ALL
-    SELECT 'sub_quality',position_code,player_id,metric,value FROM sub_metrics CROSS JOIN LATERAL (VALUES
-      ('A'::text,attack_metric),('P',progression_metric),('D',defence_metric),('C',control_metric),('I',influence_metric)
-    ) inputs(metric,value)
-    UNION ALL
-    SELECT 'sub_impact',position_code,player_id,'impact',impact FROM sub_metrics
-    UNION ALL
-    SELECT 'period',position_code||':'||season_half::text,player_id,metric,value FROM period_metrics CROSS JOIN LATERAL (VALUES
-      ('A'::text,attack_metric),('P',progression_metric),('D',defence_metric),('C',control_metric),
-      ('I',influence_metric),('success',success_metric),('failure',failure_metric)
-    ) inputs(metric,value)
+    -- bucket collapses (family,cohort,metric) into one join key. Joining CTE
+    -- columns pairwise on three text columns leaves the planner without
+    -- statistics, so it assumes each equality is highly selective and picks
+    -- nested loops that rescan the aggregates thousands of times.
+    SELECT family||'|'||cohort||'|'||metric AS bucket, family, cohort, player_id, metric, value
+    FROM (
+        SELECT 'quality'::text AS family, position_code AS cohort, player_id, metric, value
+        FROM full_metrics CROSS JOIN LATERAL (VALUES
+          ('A'::text,attack_metric),('P',progression_metric),('D',defence_metric),('C',control_metric),('I',influence_metric)
+        ) AS inputs(metric,value)
+        UNION ALL
+        SELECT 'defence',position_code,player_id,metric,value FROM full_metrics CROSS JOIN LATERAL (VALUES
+          ('duels'::text,duel_rate),('aerial',aerial_rate),('interceptions',interceptions_per90),
+          ('tackles',tackles_per90),('blocks',blocks_per90),('recoveries',recoveries_per90),
+          ('progression',progression_metric),('errors',errors_per90)
+        ) inputs(metric,value) WHERE position_code='DEF'
+        UNION ALL
+        SELECT 'goalkeeper',position_code,player_id,metric,value FROM full_metrics CROSS JOIN LATERAL (VALUES
+          ('shot_stop'::text,adjusted_save_rate),('distribution',distribution_metric),
+          ('cross_control',cross_control_per90),('sweeping',sweeping_metric),('error_avoidance',error_avoidance_metric)
+        ) inputs(metric,value) WHERE position_code='GK' AND shots_faced>0
+        UNION ALL
+        SELECT 'sub_quality',position_code,player_id,metric,value FROM sub_metrics CROSS JOIN LATERAL (VALUES
+          ('A'::text,attack_metric),('P',progression_metric),('D',defence_metric),('C',control_metric),('I',influence_metric)
+        ) inputs(metric,value)
+        UNION ALL
+        SELECT 'sub_impact',position_code,player_id,'impact',impact FROM sub_metrics
+        UNION ALL
+        SELECT 'period',position_code||':'||season_half::text,player_id,metric,value FROM period_metrics CROSS JOIN LATERAL (VALUES
+          ('A'::text,attack_metric),('P',progression_metric),('D',defence_metric),('C',control_metric),
+          ('I',influence_metric),('success',success_metric),('failure',failure_metric)
+        ) inputs(metric,value)
+    ) AS metrics
 ),
 input_centers AS (
-    SELECT family,cohort,metric,percentile_cont(.5) WITHIN GROUP (ORDER BY value) AS median,
+    SELECT bucket,family,cohort,metric,percentile_cont(.5) WITHIN GROUP (ORDER BY value) AS median,
            avg(value) AS mean,stddev_pop(value) AS stddev
-    FROM standard_inputs WHERE value IS NOT NULL GROUP BY family,cohort,metric
+    FROM standard_inputs WHERE value IS NOT NULL GROUP BY bucket,family,cohort,metric
 ),
 input_deviations AS (
-    SELECT inputs.*,centers.median,centers.mean,centers.stddev,abs(inputs.value-centers.median) AS deviation
-    FROM standard_inputs inputs JOIN input_centers centers USING(family,cohort,metric)
+    SELECT inputs.bucket,inputs.family,inputs.cohort,inputs.player_id,inputs.metric,inputs.value,
+           inputs.player_id::text||'|'||inputs.cohort AS period_key,
+           centers.median,centers.mean,centers.stddev,abs(inputs.value-centers.median) AS deviation
+    FROM standard_inputs inputs JOIN input_centers centers USING(bucket)
     WHERE inputs.value IS NOT NULL
 ),
 input_scales AS (
-    SELECT family,cohort,metric,percentile_cont(.5) WITHIN GROUP (ORDER BY deviation) AS mad
-    FROM input_deviations GROUP BY family,cohort,metric
+    SELECT bucket,percentile_cont(.5) WITHIN GROUP (ORDER BY deviation) AS mad
+    FROM input_deviations GROUP BY bucket
 ),
 standardized AS (
     SELECT input_deviations.*,
            CASE WHEN input_scales.mad>0 THEN (value-median)/(1.4826*input_scales.mad)
                 WHEN stddev>0 THEN (value-mean)/stddev ELSE 0 END AS z
-    FROM input_deviations JOIN input_scales USING(family,cohort,metric)
+    FROM input_deviations JOIN input_scales USING(bucket)
 ),
 quality_scores AS (
     SELECT standardized.player_id,
@@ -392,6 +409,13 @@ goalkeeper_scores AS (
     FROM standardized JOIN full_metrics USING(player_id)
     WHERE family='goalkeeper' GROUP BY standardized.player_id,full_metrics.shots_faced
 ),
+sub_impact_scores AS MATERIALIZED (
+    -- Reading a CTE costs the planner almost nothing, so an unfiltered scan is
+    -- always chosen as a nested-loop inner side and repeated for every row of
+    -- the outer relation. Slicing the single substitute-impact input out first
+    -- keeps that rescan proportional to the substitute cohort.
+    SELECT player_id,z FROM standardized WHERE family='sub_impact'
+),
 sub_scores AS (
     SELECT standardized.player_id,
            sum(z*CASE metric WHEN 'A' THEN weights.a WHEN 'P' THEN weights.p WHEN 'D' THEN weights.d
@@ -402,13 +426,14 @@ sub_scores AS (
 ),
 period_scores AS (
     SELECT standardized.player_id,period_metrics.season_half,period_metrics.position_code,period_metrics.minutes,
+           standardized.player_id::text||'|'||period_metrics.position_code AS progress_key,
            sum(z*CASE metric WHEN 'A' THEN weights.a WHEN 'P' THEN weights.p WHEN 'D' THEN weights.d
              WHEN 'C' THEN weights.c WHEN 'I' THEN weights.i ELSE 0 END) AS q,
            max(z) FILTER(WHERE metric='success')-max(z) FILTER(WHERE metric='failure') AS efficiency,
            max(z) FILTER(WHERE metric='I') AS influence
-    FROM standardized JOIN period_metrics USING(player_id)
+    FROM standardized JOIN period_metrics USING(period_key)
     JOIN position_weights weights ON weights.position_code=period_metrics.position_code
-    WHERE family='period' AND standardized.cohort=period_metrics.position_code||':'||period_metrics.season_half::text
+    WHERE family='period'
     GROUP BY standardized.player_id,period_metrics.season_half,period_metrics.position_code,period_metrics.minutes
 ),
 progress_deltas AS (
@@ -417,7 +442,7 @@ progress_deltas AS (
            new.efficiency-old.efficiency AS delta_efficiency,
            new.influence-old.influence AS delta_influence,
            ln((new.minutes+90)/(old.minutes+90)) AS role_growth
-    FROM period_scores old JOIN period_scores new USING(player_id,position_code)
+    FROM period_scores old JOIN period_scores new USING(progress_key)
     WHERE old.season_half=1 AND new.season_half=2 AND old.minutes>0 AND new.minutes>0
 ),
 role_centers AS (
@@ -469,7 +494,7 @@ raw_category_scores AS (
              +.25*quality.q_sub*subs.minutes/(subs.minutes+450)
              +.20*sqrt(subs.sub_apps/max(subs.sub_apps) OVER())
     FROM sub_metrics subs JOIN sub_scores quality USING(player_id)
-    JOIN standardized impact ON impact.player_id=subs.player_id AND impact.family='sub_impact'
+    JOIN sub_impact_scores impact USING(player_id)
     UNION ALL
     SELECT 'MOST_IMPROVED_PLAYER',progress.player_id,metrics.team_id,progress.new_minutes,progress.score
     FROM progress_scores progress JOIN full_metrics metrics USING(player_id)

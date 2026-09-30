@@ -1,11 +1,13 @@
 {{define "season-awards"}}<section id="season-awards" class="grid award-grid" aria-label="Premios de la temporada" aria-live="polite"
-  hx-get="{{.AwardsRefreshURL}}" hx-trigger="every 15s" hx-swap="outerHTML">
+  hx-get="{{.AwardsRefreshURL}}" hx-trigger="{{if .AwardsDeferred}}load, {{end}}every 15s" hx-swap="outerHTML">
   {{range .SeasonAwards}}
   <article class="card award">
     <div class="award-heading">
       <div class="kicker">Premio de temporada</div>
       {{if .Candidates}}
         {{if .Projected}}<span class="award-status projection">Proyección en vivo</span>{{else}}<span class="award-status published">Top 3 publicado</span>{{end}}
+      {{else if $.AwardsDeferred}}
+        <span class="award-status">Proyección en curso</span>
       {{else}}
         <span class="award-status">Resultados pendientes</span>
       {{end}}
@@ -30,6 +32,8 @@
       </li>
       {{end}}
     </ol>
+    {{else if $.AwardsDeferred}}
+    <p class="award-empty">Calculando la proyección en vivo…</p>
     {{else}}
     <p class="award-empty">El top 3 aparecerá cuando haya suficientes partidos evaluados.</p>
     {{end}}

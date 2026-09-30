@@ -146,3 +146,33 @@ MPS = 0,45×(B_new − B_old)
 - Una selección oficial publicada prevalece sobre la proyección.
 - Corregir datos crea otra versión de selección. Cambiar pesos o reglas exige una
   nueva versión de fórmula.
+
+## 6. Rendimiento de la proyección en vivo
+
+`internal/awards/live.go` es una sola consulta con CTE. PostgreSQL no tiene
+estadísticas para columnas de CTE, así que cada igualdad se estima con la
+selectividad por defecto. Reglas que hay que respetar al editarla:
+
+- **Una sola columna de join.** Una equijoin de dos o tres columnas sobre salida
+  de CTE se estima en ~1 fila, el planificador elige bucles anidados y termina
+  reescaneando los agregados miles de veces. Por eso los joins usan claves
+  compuestas de una columna: `bucket` (`family|cohort|metric`), `cohort` y
+  `period_key` (`player|posición:mitad`) en `period_windows`, y `progress_key`
+  (`player|posición`) en `period_scores`.
+- **Materializar la porción antes de unir.** El costo de leer un CTE es casi
+  cero para el planificador, así que un escaneo sin filtro siempre gana como lado
+  interno de un bucle anidado. `sub_impact_scores` recorta la entrada de impacto
+  de suplentes para que ese reescaneo sea proporcional a la cohorte y no a las
+  ~8.000 entradas estandarizadas.
+- **No mover filtros de familia al WHERE exterior.** `family='x'` sobre
+  `standardized` vuelve a estimarse con la selectividad por defecto. Cada grupo
+  de entradas se filtra dentro de su propio CTE.
+
+Medido sobre la edición activa con `EXPLAIN ANALYZE`: 8,9 s → 0,2 s de ejecución
+con resultados idénticos fila por fila. La forma anterior repetía el agrupamiento
+de desviaciones 7.813 veces (1.896.440 filas descartadas por filtro de join).
+
+La proyección no se calcula nunca dentro del render de un documento. La página
+de resumen envía las tarjetas y `GET /premios` las completa después del primer
+pintado, y `SEASON_AWARDS_CACHE_TTL` (60 s por defecto) comparte el resultado
+entre todas las consultas y entre cada pestaña que sondea.
