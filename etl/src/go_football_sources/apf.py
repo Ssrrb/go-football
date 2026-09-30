@@ -154,6 +154,63 @@ def payload_digest(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def discovery_from_response(body: bytes, url: str) -> dict[str, Any]:
+    """Normalize a fixture-page response without issuing another request.
+
+    Runs persist the exact response, and normalization has to read that file
+    rather than refetch, so this lives outside the client: it uses no state.
+    """
+    try:
+        bootstrap = parse_next_data(body.decode("utf-8"))
+    except UnicodeDecodeError as error:
+        raise APFError(f"APF returned invalid HTML from {url}") from error
+    module = _find_mapping(
+        bootstrap,
+        lambda item: item.get("type") == "football_list"
+        and item.get("subtype") == "football_competition_match",
+    )
+    data = module.get("data")
+    if not isinstance(data, Mapping):
+        raise APFError("APF fixture module did not contain a data object")
+
+    gameweeks = data.get("gameweeks") or []
+    rounds = data.get("rounds") or []
+    matches = data.get("matches") or []
+    if not isinstance(gameweeks, list) or not isinstance(rounds, list):
+        raise APFError("APF discovery returned malformed rounds or gameweeks")
+    edition_id = data.get("editionId") or _identifier(data.get("edition"))
+    round_id = data.get("roundId") or _identifier(data.get("round"))
+    if not edition_id or not round_id:
+        raise APFError("APF discovery did not expose editionId and roundId")
+
+    first_match = matches[0] if matches and isinstance(matches[0], Mapping) else {}
+    current = data.get("currentGameweek") or data.get("current")
+    if current is None:
+        for candidate in rounds:
+            if isinstance(candidate, Mapping) and candidate.get("currentGameweek"):
+                current = candidate["currentGameweek"]
+                break
+    if current is None:
+        current = first_match.get("gameweek")
+    result = {
+        "source": "apf",
+        "source_url": url,
+        "fetched_at": _utc_now(),
+        "edition_id": edition_id,
+        "round_id": round_id,
+        "competition": _entity(data.get("competition") or first_match.get("competition")),
+        "edition": _entity(data.get("edition") or first_match.get("edition")),
+        "rounds": rounds,
+        "gameweeks": gameweeks,
+        "current_gameweek": current,
+        "current_matches": matches,
+    }
+    result["payload_sha256"] = payload_digest(
+        {key: value for key, value in result.items() if key not in {"fetched_at", "payload_sha256"}}
+    )
+    return result
+
+
 class APFClient:
     """Read APF discovery, round, and match data."""
 
@@ -210,90 +267,57 @@ class APFClient:
                 time.sleep(2**attempt)
         raise APFError(f"Could not fetch {url}: {last_error}") from last_error
 
-    def _get_json(self, path: str, params: Mapping[str, Any] | None = None) -> tuple[Any, str]:
+    def _get_json_with_raw(
+        self, path: str, params: Mapping[str, Any] | None = None
+    ) -> tuple[Any, bytes, str]:
         body, url = self._get(path, params)
         try:
-            return json.loads(body), url
+            return json.loads(body), body, url
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise APFError(f"APF returned invalid JSON from {url}") from error
 
+    def discover_with_raw(self) -> tuple[dict[str, Any], bytes, str]:
+        """Discover APF metadata and retain the exact HTTP response for a run."""
+        body, url = self._get(FIXTURES_PATH)
+        return discovery_from_response(body, url), body, url
+
     def discover(self) -> dict[str, Any]:
         """Discover current edition, round, gameweeks, and the selected round."""
-        body, url = self._get(FIXTURES_PATH)
-        try:
-            bootstrap = parse_next_data(body.decode("utf-8"))
-        except UnicodeDecodeError as error:
-            raise APFError(f"APF returned invalid HTML from {url}") from error
-        module = _find_mapping(
-            bootstrap,
-            lambda item: item.get("type") == "football_list"
-            and item.get("subtype") == "football_competition_match",
-        )
-        data = module.get("data")
-        if not isinstance(data, Mapping):
-            raise APFError("APF fixture module did not contain a data object")
+        return self.discover_with_raw()[0]
 
-        gameweeks = data.get("gameweeks") or []
-        rounds = data.get("rounds") or []
-        matches = data.get("matches") or []
-        if not isinstance(gameweeks, list) or not isinstance(rounds, list):
-            raise APFError("APF discovery returned malformed rounds or gameweeks")
-
-        edition_id = data.get("editionId") or _identifier(data.get("edition"))
-        round_id = data.get("roundId") or _identifier(data.get("round"))
-        if not edition_id or not round_id:
-            raise APFError("APF discovery did not expose editionId and roundId")
-
-        first_match = matches[0] if matches and isinstance(matches[0], Mapping) else {}
-        current = data.get("currentGameweek") or data.get("current")
-        if current is None:
-            for candidate in rounds:
-                if isinstance(candidate, Mapping) and candidate.get("currentGameweek"):
-                    current = candidate["currentGameweek"]
-                    break
-        if current is None:
-            current = first_match.get("gameweek")
-        result = {
-            "source": "apf",
-            "source_url": url,
-            "fetched_at": _utc_now(),
-            "edition_id": edition_id,
-            "round_id": round_id,
-            "competition": _entity(data.get("competition") or first_match.get("competition")),
-            "edition": _entity(data.get("edition") or first_match.get("edition")),
-            "rounds": rounds,
-            "gameweeks": gameweeks,
-            "current_gameweek": current,
-            "current_matches": matches,
-        }
-        result["payload_sha256"] = payload_digest(
-            {key: value for key, value in result.items() if key not in {"fetched_at", "payload_sha256"}}
-        )
-        return result
-
-    def get_round(self, edition_id: str, round_id: str, gameweek_id: str) -> dict[str, Any]:
-        payload, url = self._get_json(
+    def get_round_with_raw(
+        self, edition_id: str, round_id: str, gameweek_id: str
+    ) -> tuple[dict[str, Any], bytes, str]:
+        payload, body, url = self._get_json_with_raw(
             ROUND_API_PATH,
             {"editionId": edition_id, "roundId": round_id, "gameweekId": gameweek_id},
         )
         if not isinstance(payload, Mapping):
             raise APFError("APF round endpoint returned an unexpected payload")
         result = dict(payload)
-        result["source_url"] = url
-        result["fetched_at"] = _utc_now()
-        result["payload_sha256"] = payload_digest(payload)
-        return result
+        result.update(source_url=url, fetched_at=_utc_now(), payload_sha256=hashlib.sha256(body).hexdigest())
+        return result, body, url
 
-    def get_match_with_raw(self, slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Fetch a normalized match and its unmodified source payload."""
-        payload, url = self._get_json(MATCH_API_PATH, {"slug": slug})
+    def get_round(self, edition_id: str, round_id: str, gameweek_id: str) -> dict[str, Any]:
+        return self.get_round_with_raw(edition_id, round_id, gameweek_id)[0]
+
+    def get_match_with_raw_bytes(self, slug: str) -> tuple[dict[str, Any], dict[str, Any], bytes, str]:
+        """Fetch a normalized match plus the exact source response bytes."""
+        payload, body, url = self._get_json_with_raw(MATCH_API_PATH, {"slug": slug})
         if not isinstance(payload, Mapping):
             raise APFError("APF match endpoint returned an unexpected payload")
         raw = dict(payload)
         normalized = normalize_match_payload(raw)
-        normalized["source_url"] = url
-        normalized["fetched_at"] = _utc_now()
-        normalized["payload_sha256"] = payload_digest(raw)
+        normalized.update(
+            source_url=url,
+            fetched_at=_utc_now(),
+            payload_sha256=hashlib.sha256(body).hexdigest(),
+        )
+        return normalized, raw, body, url
+
+    def get_match_with_raw(self, slug: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        """Fetch a normalized match and its unmodified source payload."""
+        normalized, raw, _, _ = self.get_match_with_raw_bytes(slug)
         return normalized, raw
 
     def get_match(self, slug: str) -> dict[str, Any]:

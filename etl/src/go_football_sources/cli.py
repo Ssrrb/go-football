@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from .apf import APFClient, APFError, payload_digest
+from .apf_runs import capture_run
 
 
 FINISHED_STATUSES = {"fulltime", "finished", "played", "afterextra", "afterpenalties"}
@@ -150,6 +151,18 @@ def build_parser() -> argparse.ArgumentParser:
     season_parser.add_argument(
         "--details", choices=("none", "finished", "all"), default="none"
     )
+
+    run_parser = subparsers.add_parser("run", help="persist a durable APF extraction run")
+    run_parser.add_argument("--rounds", required=True, help="comma-separated completed gameweeks, e.g. 5 or 4,5")
+    run_parser.add_argument(
+        "--runs-root", type=Path,
+        default=Path("tests/sofascore_scraper/data/apf/clausura-2026/runs"),
+        help="durable run root (the default is only suitable for local development)",
+    )
+    run_parser.add_argument(
+        "--storage-uri", required=True,
+        help="stable durable URI corresponding to --runs-root, e.g. s3://football-raw/apf/clausura-2026/runs",
+    )
     return parser
 
 
@@ -164,6 +177,14 @@ def main(argv: list[str] | None = None) -> int:
             value = _round(client, client.discover(), args.number, args.details)
         elif args.command == "match":
             value = client.get_match(args.slug)
+        elif args.command == "run":
+            try:
+                rounds = [int(value.strip()) for value in args.rounds.split(",") if value.strip()]
+            except ValueError as error:
+                raise APFError("--rounds must be a comma-separated list of positive integers") from error
+            run_dir = capture_run(client, args.runs_root, rounds, storage_uri=args.storage_uri)
+            _write_json({"run_dir": str(run_dir), "run_id": run_dir.name, "selected_rounds": sorted(rounds)}, args.output)
+            return 0
         else:
             value = _season(client, args.details)
         _write_json(value, args.output)

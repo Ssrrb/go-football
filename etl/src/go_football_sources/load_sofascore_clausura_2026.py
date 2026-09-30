@@ -93,15 +93,19 @@ def _read_json(path: Path) -> Any:
 
 
 def _fetched_at(data_root: Path) -> str:
+    """Use scraper export time when available, otherwise the newest raw file time."""
     processed = data_root / "match_details" / "processed"
     candidates: list[int] = []
     for path in processed.glob("all_matches_*.csv"):
         match = re.fullmatch(r"all_matches_(\d+)\.csv", path.name)
         if match:
             candidates.append(int(match.group(1)))
-    if not candidates:
-        raise LoadError("Could not derive the extraction timestamp from processed data")
-    return datetime.fromtimestamp(max(candidates), timezone.utc).isoformat()
+    if candidates:
+        return datetime.fromtimestamp(max(candidates), timezone.utc).isoformat()
+    raw_files = list((data_root / "match_details").glob("*/season_*/*/*.json"))
+    if not raw_files:
+        raise LoadError("Could not derive the extraction timestamp from persisted data")
+    return datetime.fromtimestamp(max(path.stat().st_mtime for path in raw_files), timezone.utc).isoformat()
 
 
 def _file_snapshot(
@@ -110,6 +114,7 @@ def _file_snapshot(
     source_id: str,
     source_url: str,
     fetched_at: str,
+    body_uri: str,
 ) -> tuple[dict[str, Any], Any]:
     try:
         body = path.read_bytes()
@@ -127,7 +132,7 @@ def _file_snapshot(
             "url": source_url,
             "fetched_at": fetched_at,
             "digest": digest,
-            "payload": payload,
+            "body_uri": body_uri,
         },
         payload,
     )
@@ -152,12 +157,31 @@ def _load_crosswalk(path: Path) -> dict[str, Any]:
         raise LoadError("The identity crosswalk must contain team and player maps")
     if len(set(map(str, teams.values()))) != len(teams):
         raise LoadError("The team crosswalk is not one-to-one")
-    if len(set(map(str, players.values()))) != len(players):
-        raise LoadError("The player crosswalk is not one-to-one")
+    matches = document.get("matches")
+    if matches is not None and not isinstance(matches, dict):
+        raise LoadError("The match crosswalk must be a JSON object")
+    # The player crosswalk is deliberately many-to-one. source_entity models every
+    # provider id as an alias of one internal uuid, and providers do publish more
+    # than one profile for the same human: SofaScore 1546744 "Carlos Vera" and
+    # 2642215 "Carlos Antonio Vera Benitez" share a date of birth, height, club and
+    # shirt number and never appear in one squad, while 1467989 "Javier Vallejos"
+    # and 1467991 "Javier Fleitas" cover disjoint rounds of the same Rubio Nu slot.
+    # Aliasing them keeps one canonical player instead of inventing a second human.
+    # The real contradiction - two profiles of one player inside a single squad - is
+    # rejected in collect(), where the match-level lineups are available.
+    if not all(str(value).strip() for value in players.values()):
+        raise LoadError("The player crosswalk contains an empty APF player id")
     return {
         "teams": {str(key): str(value) for key, value in teams.items()},
         "players": {str(key): str(value) for key, value in players.items()},
+        "matches": {str(key): str(value) for key, value in (matches or {}).items()},
     }
+
+
+def _event_finished(event: Mapping[str, Any]) -> bool:
+    """The scraper caches whole rounds; only finished events have persisted details."""
+    status = event.get("status") or {}
+    return isinstance(status, Mapping) and status.get("type") == "finished"
 
 
 def _validate_basic(basic: Mapping[str, Any], match_id: str) -> None:
@@ -174,7 +198,7 @@ def _validate_basic(basic: Mapping[str, Any], match_id: str) -> None:
     if status.get("type") != "finished" or int(status.get("code") or 0) != 100:
         raise LoadError(f"Match {match_id} is not finished")
     round_number = int((basic.get("roundInfo") or {}).get("round") or 0)
-    if round_number not in {1, 2, 3, 4}:
+    if not 1 <= round_number <= 22:
         raise LoadError(f"Match {match_id} has unexpected round {round_number}")
 
 
@@ -318,6 +342,7 @@ def _source_url(match_id: str, endpoint: str) -> str:
 def _validate_csv_inventory(data_root: Path, expected_match_ids: set[str]) -> None:
     summary_files = list((data_root / "matches").glob(f"{TOURNAMENT_ID}_*/*{SEASON_ID}*_summary.csv"))
     processed_files = list((data_root / "match_details" / "processed").glob("all_matches_*.csv"))
+    # CSV exports are optional metadata. Raw JSON files are the loader contract.
     for path in summary_files + processed_files:
         try:
             with path.open(encoding="utf-8-sig", newline="") as handle:
@@ -328,10 +353,17 @@ def _validate_csv_inventory(data_root: Path, expected_match_ids: set[str]) -> No
             raise LoadError(f"CSV inventory in {path} does not match detail files")
 
 
-def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
-    """Validate and normalize the persisted SofaScore data without network I/O."""
+def collect(data_root: Path, crosswalk_path: Path, *, snapshot_uri_root: str | None = None) -> dict[str, Any]:
+    """Validate and normalize persisted data without network I/O.
+
+    ``snapshot_uri_root`` must name durable storage in production. The local
+    file URI fallback exists solely for fixture tests and local development.
+    """
     crosswalk = _load_crosswalk(crosswalk_path)
     fetched_at = _fetched_at(data_root)
+    uri_root = (snapshot_uri_root or data_root.resolve().as_uri()).rstrip("/")
+    def body_uri(path: Path) -> str:
+        return uri_root + "/" + path.relative_to(data_root).as_posix()
     snapshots: list[dict[str, Any]] = []
 
     season_path = data_root / "seasons" / f"{TOURNAMENT_ID}_Paraguay_Primera_División_Clausura_seasons.json"
@@ -341,6 +373,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
         TOURNAMENT_ID,
         f"https://www.sofascore.com/api/v1/unique-tournament/{TOURNAMENT_ID}/seasons",
         fetched_at,
+        body_uri(season_path),
     )
     snapshots.append(season_snapshot)
     if not any(str(item.get("id")) == SEASON_ID for item in seasons.get("seasons") or []):
@@ -352,20 +385,31 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
         raise LoadError("Expected one Clausura 2026 round directory")
     scheduled_match_ids: set[str] = set()
     round_counts: Counter[int] = Counter()
-    for round_number in range(1, 5):
-        path = round_directories[0] / f"round_{round_number}.json"
+    round_paths = sorted(round_directories[0].glob("round_*.json"), key=lambda path: int(path.stem.removeprefix("round_")))
+    if not round_paths:
+        raise LoadError("Expected at least one persisted Clausura round")
+    for path in round_paths:
+        try:
+            round_number = int(path.stem.removeprefix("round_"))
+        except ValueError as error:
+            raise LoadError(f"Invalid round filename: {path.name}") from error
         snapshot, payload = _file_snapshot(
             path,
             "round",
             f"{SEASON_ID}:round:{round_number}",
             f"https://www.sofascore.com/api/v1/unique-tournament/{TOURNAMENT_ID}/season/{SEASON_ID}/events/round/{round_number}",
             fetched_at,
+            body_uri(path),
         )
         snapshots.append(snapshot)
         events = payload.get("events") or []
-        if int(payload.get("round") or round_number) != round_number or len(events) != 6:
-            raise LoadError(f"Round {round_number} must contain six matches")
-        for event in events:
+        finished = [event for event in events if _event_finished(event)]
+        if not finished:
+            # Unplayed rounds are schedule cache only; they carry no match details.
+            continue
+        if int(payload.get("round") or round_number) != round_number or len(finished) != 6:
+            raise LoadError(f"Round {round_number} must contain six finished matches")
+        for event in finished:
             source_id = str(event.get("id") or "")
             if not source_id or source_id in scheduled_match_ids:
                 raise LoadError(f"Round {round_number} contains an invalid duplicate match id")
@@ -388,8 +432,8 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
         key=lambda path: int(path.name),
     )
     detail_match_ids = {path.name for path in match_paths}
-    if len(match_paths) != 24 or detail_match_ids != scheduled_match_ids:
-        raise LoadError("Expected the same 24 matches in rounds and match details")
+    if len(match_paths) != len(scheduled_match_ids) or detail_match_ids != scheduled_match_ids:
+        raise LoadError("Expected the same matches in rounds and match details")
     _validate_csv_inventory(data_root, detail_match_ids)
 
     matches: list[dict[str, Any]] = []
@@ -416,7 +460,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
                 raise LoadError(f"Match {match_id} is missing {endpoint}.json")
             source_id = match_id if endpoint == "basic" else f"{match_id}:{endpoint}"
             snapshot, payload = _file_snapshot(
-                path, endpoint, source_id, _source_url(match_id, endpoint), fetched_at
+                path, endpoint, source_id, _source_url(match_id, endpoint), fetched_at, body_uri(path)
             )
             snapshots.append(snapshot)
             payloads[endpoint] = payload
@@ -424,6 +468,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
 
         basic = payloads["basic"]
         _validate_basic(basic, match_id)
+        match_canonical_id = _match_canonical_id(crosswalk["matches"], match_id)
         round_number = int(basic["roundInfo"]["round"])
         kickoff = int(basic["startTimestamp"])
         gameweek_times[round_number].append(kickoff)
@@ -452,7 +497,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
         matches.append(
             {
                 "source_id": match_id,
-                "id": _sofascore_id("match", match_id),
+                "id": match_canonical_id,
                 "round": round_number,
                 "kickoff_at": datetime.fromtimestamp(kickoff, timezone.utc).isoformat(),
                 "status": "finished",
@@ -502,7 +547,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
                     {
                         "id": _sofascore_id("lineup", lineup_source_id),
                         "source_id": lineup_source_id,
-                        "match_id": _sofascore_id("match", match_id),
+                        "match_id": match_canonical_id,
                         "match_source_id": match_id,
                         "player_source_id": player_source_id,
                         "team_source_id": team["source_id"],
@@ -532,7 +577,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
                     {
                         "id": _sofascore_id("player_stat", stat_source_id),
                         "source_id": stat_source_id,
-                        "match_id": _sofascore_id("match", match_id),
+                        "match_id": match_canonical_id,
                         "match_source_id": match_id,
                         "player_source_id": player_source_id,
                         "team_source_id": team["source_id"],
@@ -559,7 +604,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
                 {
                     "id": _sofascore_id("team_stat", stat_source_id),
                     "source_id": stat_source_id,
-                    "match_id": _sofascore_id("match", match_id),
+                    "match_id": match_canonical_id,
                     "match_source_id": match_id,
                     "team_source_id": team["source_id"],
                     "raw_stats": _team_stats(payloads["statistics"], side),
@@ -613,7 +658,7 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
                 {
                     "id": _sofascore_id("event", event_source_id),
                     "source_id": event_source_id,
-                    "match_id": _sofascore_id("match", match_id),
+                    "match_id": match_canonical_id,
                     "match_source_id": match_id,
                     "event_order": event_order,
                     "event_type": str(incident.get("incidentType") or "unknown"),
@@ -641,13 +686,35 @@ def collect(data_root: Path, crosswalk_path: Path) -> dict[str, Any]:
 
     if set(teams) != set(crosswalk["teams"]):
         raise LoadError("Observed SofaScore teams do not exactly match the reviewed crosswalk")
-    if set(players) != set(crosswalk["players"]):
-        missing = sorted(set(players) - set(crosswalk["players"]))
-        raise LoadError(f"Observed players do not exactly match the reviewed crosswalk: {missing}")
-    if len(lineups) != 1102 or len(player_stats) != 1102:
-        raise LoadError("Expected 1,102 lineup and player-stat rows")
-    if len(team_stats) != 48:
-        raise LoadError("Expected 48 team-stat rows")
+    observed_players = set(players)
+    reviewed_players = set(crosswalk["players"])
+    if observed_players != reviewed_players:
+        missing = sorted(observed_players - reviewed_players)
+        stale = sorted(reviewed_players - observed_players)
+        raise LoadError(
+            "Observed players do not exactly match the reviewed crosswalk "
+            f"(unmapped: {missing}, not in this dataset: {stale})"
+        )
+    # Aliasing several provider profiles to one canonical player is legitimate, but
+    # two of those profiles inside a single squad would mean one human is listed
+    # twice in the same match. That is a crosswalk error, not a provider quirk.
+    match_lineups: dict[str, list[dict[str, Any]]] = {}
+    for row in lineups:
+        match_lineups.setdefault(str(row["match_source_id"]), []).append(row)
+    for match_id, rows in match_lineups.items():
+        seen: dict[str, set[str]] = {}
+        for row in rows:
+            canonical = _apf_id("player", crosswalk["players"][row["player_source_id"]])
+            seen.setdefault(canonical, set()).add(row["player_source_id"])
+        duplicated = {key: sorted(value) for key, value in seen.items() if len(value) > 1}
+        if duplicated:
+            raise LoadError(
+                f"Match {match_id} maps multiple SofaScore players to one APF player: {duplicated}"
+            )
+    if not lineups or len(lineups) != len(player_stats):
+        raise LoadError("Every persisted lineup player must have exactly one player-stat row")
+    if len(team_stats) != 2 * len(matches):
+        raise LoadError("Every persisted match must have two team-stat rows")
 
     profiles = {
         source_id: max(counter, key=lambda value: (counter[value], value))
@@ -716,10 +783,60 @@ metadata = source_entity.metadata || EXCLUDED.metadata,
 last_seen_at = GREATEST(source_entity.last_seen_at, EXCLUDED.last_seen_at);"""
 
 
+def _resolved_stat_alias_sql(
+    entity_type: str,
+    table: str,
+    source_id: str,
+    match_column: str,
+    entity_column: str,
+    match_id: str,
+    entity_id: str,
+    metadata: Mapping[str, Any],
+    seen_at: str,
+) -> str:
+    """Alias a SofaScore observation onto the row that actually survived the load.
+
+    ``player_match_stat`` and ``team_match_stat`` are keyed by their natural
+    (match, entity) pair rather than by a provider id, and APF is the canonical
+    provider for those facts. When APF already stored a fixture, its row wins the
+    upsert and keeps its own id, so a SofaScore alias written against the id this
+    loader computed would point at nothing. Selecting the id back out of the table
+    makes the alias describe the stored row instead of a guessed one.
+    """
+    return f"""INSERT INTO source_entity
+(source_code, entity_type, source_id, canonical_id, source_name, metadata, first_seen_at, last_seen_at)
+SELECT 'sofascore', {_sql_text(entity_type)}, {_sql_text(source_id)}, existing.id, NULL,
+       {_sql_json(metadata)}::jsonb, {_sql_text(seen_at)}, {_sql_text(seen_at)}
+FROM {table} existing
+WHERE existing.{match_column} = {_sql_text(match_id)}
+  AND existing.{entity_column} = {_sql_text(entity_id)}
+ON CONFLICT (source_code, entity_type, source_id) DO UPDATE SET
+metadata = source_entity.metadata || EXCLUDED.metadata,
+last_seen_at = GREATEST(source_entity.last_seen_at, EXCLUDED.last_seen_at);"""
+
+
 def _canonical_team(dataset: Mapping[str, Any], source_id: str | None) -> str | None:
     if source_id is None:
         return None
     return _apf_id("team", dataset["crosswalk"]["teams"][source_id])
+
+
+def _match_canonical_id(matches: Mapping[str, Any], source_id: str) -> str:
+    """Resolve one SofaScore match id to its internal uuid.
+
+    A fixture that APF also publishes must collapse onto the same internal match,
+    otherwise rounds 1-12 would store each played fixture twice. SofaScore is
+    namespaced only while no APF counterpart exists, which is the case for the
+    earliest rounds that the local APF run root does not reach.
+    """
+    apf_source_id = matches.get(source_id)
+    if apf_source_id is None:
+        return _sofascore_id("match", source_id)
+    return _apf_id("match", apf_source_id)
+
+
+def _canonical_match(dataset: Mapping[str, Any], source_id: str) -> str:
+    return _match_canonical_id(dataset["crosswalk"]["matches"], source_id)
 
 
 def _canonical_player(dataset: Mapping[str, Any], source_id: str | None) -> str | None:
@@ -754,7 +871,7 @@ base_url = EXCLUDED.base_url, is_canonical = false;"""
     for snapshot in dataset["snapshots"]:
         statements.append(
             "INSERT INTO raw_snapshot "
-            "(id, source_code, endpoint_kind, source_entity_id, source_url, fetched_at, payload_sha256, payload) VALUES ("
+            "(id, source_code, endpoint_kind, source_entity_id, source_url, fetched_at, payload_sha256, body_uri) VALUES ("
             + ", ".join(
                 (
                     _sql_text(snapshot["id"]),
@@ -764,7 +881,7 @@ base_url = EXCLUDED.base_url, is_canonical = false;"""
                     _sql_text(snapshot["url"]),
                     _sql_text(snapshot["fetched_at"]),
                     _sql_text(snapshot["digest"]),
-                    _sql_json(snapshot["payload"]),
+                    _sql_text(snapshot["body_uri"]),
                 )
             )
             + ") ON CONFLICT (id) DO NOTHING;"
@@ -795,7 +912,7 @@ ON CONFLICT (id) DO UPDATE SET updated_at = now();""",
             ),
         )
     )
-    for number in range(1, 5):
+    for number in sorted(dataset["round_counts"]):
         source_id = f"{SEASON_ID}:round:{number}"
         fallback_id = _sofascore_id("gameweek", source_id)
         timestamps = dataset["gameweek_times"][number]
@@ -955,8 +1072,14 @@ position_code = EXCLUDED.position_code, last_snapshot_id = EXCLUDED.last_snapsho
 updated_at = now();"""
         )
         statements.append(
-            _source_entity_sql(
-                "lineup", lineup["source_id"], lineup["id"], None,
+            _resolved_stat_alias_sql(
+                "lineup",
+                "match_lineup",
+                lineup["source_id"],
+                "match_id",
+                "player_id",
+                lineup["match_id"],
+                player_id,
                 {
                     "match_id": lineup["match_source_id"],
                     "player_id": lineup["player_source_id"],
@@ -1004,8 +1127,14 @@ updated_at = now();"""
             + ",\nraw_stats = EXCLUDED.raw_stats, last_snapshot_id = EXCLUDED.last_snapshot_id, updated_at = now();"
         )
         statements.append(
-            _source_entity_sql(
-                "player_stat", stat["source_id"], stat["id"], None,
+            _resolved_stat_alias_sql(
+                "player_stat",
+                "player_match_stat",
+                stat["source_id"],
+                "match_id",
+                "player_id",
+                stat["match_id"],
+                player_id,
                 {
                     "match_id": stat["match_source_id"],
                     "player_id": stat["player_source_id"],
@@ -1026,8 +1155,14 @@ ON CONFLICT (match_id, team_id) DO UPDATE SET
 raw_stats = EXCLUDED.raw_stats, last_snapshot_id = EXCLUDED.last_snapshot_id, updated_at = now();"""
         )
         statements.append(
-            _source_entity_sql(
-                "team_stat", stat["source_id"], stat["id"], None,
+            _resolved_stat_alias_sql(
+                "team_stat",
+                "team_match_stat",
+                stat["source_id"],
+                "match_id",
+                "team_id",
+                stat["match_id"],
+                team_id,
                 {"match_id": stat["match_source_id"], "team_id": stat["team_source_id"]},
                 seen_at,
             )
@@ -1116,6 +1251,10 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("data/sources/sofascore-apf-clausura-2026-crosswalk.json"),
     )
     parser.add_argument("--env-file", type=Path, default=Path(".env"))
+    parser.add_argument(
+        "--snapshot-uri-root",
+        help="stable durable URI for --data-root (required in production; e.g. s3://football-raw/sofascore/clausura-2026)",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--sql-output", type=Path)
     return parser
@@ -1124,7 +1263,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        dataset = collect(args.data_root, args.crosswalk)
+        dataset = collect(args.data_root, args.crosswalk, snapshot_uri_root=args.snapshot_uri_root)
         sql = build_sql(dataset)
         if args.sql_output:
             args.sql_output.parent.mkdir(parents=True, exist_ok=True)
