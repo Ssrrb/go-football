@@ -85,6 +85,110 @@ auditable, versioned selections. See
 [`docs/season-awards.md`](docs/season-awards.md) for
 weights, eligibility, progression windows, and tie-breakers.
 
+## Deployment
+
+The service is deployed to **Render** using the Blueprint in
+[`render.yaml`](render.yaml), which builds the final Docker stage
+(`gcr.io/distroless/static-debian12:nonroot`). Templates, CSS, JavaScript and
+club crests are `//go:embed`ed, so the container is self-contained and requires
+no volume mounts.
+
+```bash
+# Render Dashboard → New → Blueprint → point at this repository.
+```
+
+After the Blueprint is applied, fill in the secrets it prompts for. Anything
+marked `sync: false` in `render.yaml` must come from the dashboard and must never
+be committed.
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | yes | Use the Neon `-pooler` endpoint so the serverless database does not exhaust its connection limit |
+| `EDITION_ID` | yes | Already set in `render.yaml` |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URL` | optional | All three or none. `GOOGLE_REDIRECT_URL` must match the deployed domain |
+| `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE` | optional | Leave empty to disable Sentry |
+| `REDIS_ADDR` | optional | See below — the service runs correctly without it |
+
+`HTTP_ADDR` is set to `:10000` in the Blueprint because Render injects `PORT`
+(default `10000`), and this service has no `${PORT}` expansion. `APP_ENV` is set
+to `production`, which enables `COOKIE_SECURE` for session cookies over HTTPS.
+
+### Health checks
+
+The Blueprint targets **`/health/live`**, not `/health/ready`.
+
+`/health/ready` also probes Redis and returns `503` when Redis is unreachable.
+Since Redis is intentionally not provisioned, using it as the Render health
+check would mark every deploy unhealthy. `/health/live` reports process
+liveness only.
+
+### Redis
+
+Redis stays unprovisioned in production, and the service does not need it:
+
+1. The Redis client is constructed lazily; startup never connects or pings.
+2. The only pinger is `/health/ready`, which is not used as the health check.
+3. `leaderboard.Service.rank` skips the Redis read entirely when
+   `SCORING_MODEL_ID=default`, which is the configured value.
+4. Nothing writes sorted sets — the outbox consumer was never implemented — so
+   even with a live Redis, `Top` returns empty and the request falls through to
+   PostgreSQL.
+
+Set `REDIS_ADDR` (for example to an Upstash free endpoint) only if you want
+`/health/ready` to report healthy as well.
+
+### Migrations
+
+Migrations are **not** applied by the container. They are only mounted into
+`docker-entrypoint-initdb.d` for a fresh local Postgres volume in
+`compose.yaml`. The runtime image is distroless and has no shell, so a
+`psql`-based pre-deploy step would also fail.
+
+Apply them out-of-band, in numeric order, once per environment:
+
+```bash
+psql "$DATABASE_URL" -f data/db/migrations/001_initial.sql
+# ... through 007_provider_independent_ratings.sql
+```
+
+The `006` and `007` migrations retire v1/v2 formulas and activate v3. They are
+**not idempotent** — the `INSERT` statements use fixed UUIDs with no
+`ON CONFLICT` clause, so a second run fails on a primary-key violation and rolls
+back its whole transaction. Check `select version, status, count(*) from
+season_award_formula group by version, status;` before re-running.
+
+### Google sign-in
+
+Once the service has a domain:
+
+1. Update `GOOGLE_REDIRECT_URL` to the deployed callback URL and set it in the
+   Blueprint's dashboard values.
+2. Register that redirect URI in Google Cloud Console.
+3. Publish the OAuth consent screen. In "Testing" mode refresh tokens expire
+   after seven days.
+
+### Free tier behaviour
+
+Render's free Hobby web services spin down after 15 minutes without inbound
+traffic, and the first request afterwards takes about a minute while the service
+wakes; 750 instance hours are included per workspace per month. On a free Neon
+database the compute may also suspend after inactivity, which adds a further
+cold start on the first query. Both are acceptable for a project site and are
+removed by moving the service to a paid plan.
+
+If a deploy stalls because Render does not detect the GitHub checks, change
+`autoDeployTrigger` in `render.yaml` from `checksPass` to `commit`.
+
+`buildFilter` restricts deploys to the paths the production image actually
+contains (`cmd/`, `internal/`, `go.mod`, `go.sum`), so edits under `etl/`,
+`tests/` or `docs/` do not consume build minutes.
+
+### Rotating credentials
+
+`.env` is gitignored and has never been committed. If its values were ever
+exposed — including by being pasted into a chat — rotate the Neon password and
+the Google client secret, then update them only in the Render dashboard.
+
 ## Authentication
 
 The web app supports email/password accounts and optional Google OAuth. The

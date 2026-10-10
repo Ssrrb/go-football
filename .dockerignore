@@ -6,3 +6,14 @@
 data/raw
 tmp
 web
+
+# Not referenced by any Dockerfile COPY step.
+# The build stage only needs go.mod, go.sum, .air.toml, cmd/ and internal/.
+tests
+etl
+docs
+data
+.github
+.vscode
+*.md
+.DS_Store

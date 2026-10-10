@@ -1,0 +1,103 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploys the Go web service as a Docker container on Render's free Hobby plan.
+# The final Dockerfile stage (distroless) is what Render builds and runs.
+#
+#   Dashboard → New → Blueprint → point at this repo.
+#
+# NOTE ON SECRETS: values marked `sync: false` below are intentionally not stored
+# in this repository. Render will prompt for them when the Blueprint is synced.
+
+services:
+  - type: web
+    name: go-football
+    runtime: docker
+    plan: free
+    region: ohio # matches the Neon (us-east-2) pooler; change if you move data sources
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # /health/live is process liveness only. /health/ready additionally probes
+    # Redis, which is intentionally not provisioned (see README), so using it here
+    # would mark every deploy unhealthy.
+    healthCheckPath: /health/live
+
+    # Only deploy once CI has passed, so a red run never reaches production.
+    # Supported values: commit (default) | checksPass | off. Switch to `commit`
+    # if deploys stall because Render is not picking up the GitHub checks.
+    autoDeployTrigger: checksPass
+
+    # The production image contains only cmd/, internal/ and the Go module
+    # manifests (see the Dockerfile's COPY steps), so changes elsewhere do not
+    # need a rebuild.
+    buildFilter:
+      paths:
+        - Dockerfile
+        - render.yaml
+        - cmd/**
+        - internal/**
+        - go.mod
+        - go.sum
+
+    envVars:
+      # --- Plain configuration (safe to keep in version control) ---
+
+      # Render injects PORT (default 10000). HTTP_ADDR is the only bind address
+      # this service reads, and Go does not expand ${PORT}, so it is set literally.
+      - key: HTTP_ADDR
+        value: ":10000"
+
+      # Auto-enables COOKIE_SECURE for session cookies over HTTPS.
+      - key: APP_ENV
+        value: production
+
+      # "default" = provider-independent v3 positional algorithm, computed in SQL
+      # from finished-match facts. No Redis projection is read on this path.
+      - key: SCORING_MODEL_ID
+        value: default
+
+      - key: EDITION_ID
+        value: 365aa088-1551-5ce2-bdc9-522b6b4c3c9a
+
+      - key: DB_MIN_CONNS
+        value: "2"
+
+      - key: DB_MAX_CONNS
+        value: "0"
+
+      - key: LEADERBOARD_CACHE_TTL
+        value: 15s
+
+      - key: SEASON_AWARDS_CACHE_TTL
+        value: 60s
+
+      # --- Secrets: fill in from the Render dashboard ---
+
+      # Neon pooled connection string. Use the -pooler endpoint so the serverless
+      # database does not exhaust its connection limit.
+      - key: DATABASE_URL
+        sync: false
+
+      # Optional. Redis is reserved capacity: no process writes sorted sets, so
+      # this only affects /health/ready. Leave it unset to run without Redis.
+      - key: REDIS_ADDR
+        sync: false
+
+      - key: SENTRY_DSN
+        sync: false
+
+      # Value 0.1 = 10% of requests traced. 0 = errors only.
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0.1"
+
+      # Google sign-in: all three must be set, or all three empty. If set,
+      # GOOGLE_REDIRECT_URL must point at this service's final domain.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+
+      - key: GOOGLE_REDIRECT_URL
+        sync: false
